@@ -96,6 +96,13 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
             ).execute()
 
             for event in result.get("items", []):
+                # Skip birthday events (Google Contacts birthdays)
+                if event.get("eventType") == "birthday":
+                    continue
+                summary = event.get("summary", "(No title)")
+                if "birthday" in summary.lower() and "s birthday" in summary.lower():
+                    continue
+
                 start = event["start"]
                 end = event["end"]
 
@@ -110,7 +117,7 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                 all_events.append({
                     "start": start_dt,
                     "end": end_dt,
-                    "summary": event.get("summary", "(No title)"),
+                    "summary": summary,
                     "location": event.get("location", ""),
                     "all_day": all_day,
                     "calendar": cal_label,
