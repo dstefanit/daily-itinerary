@@ -273,7 +273,14 @@ def _format_events_for_prompt(events: list[dict]) -> str:
     """Format today's events as text lines for the AI prompt."""
     lines = []
     for e in events:
-        time_str = "All Day" if e["all_day"] else e["start"].strftime("%-I:%M %p")
+        if e["all_day"]:
+            time_str = "All Day"
+        else:
+            # Convert to Pacific before formatting for the prompt
+            start = e["start"]
+            if hasattr(start, "astimezone"):
+                start = start.astimezone(TIMEZONE)
+            time_str = start.strftime("%-I:%M %p")
         loc = f" at {e['location']}" if e.get("location") else ""
         lines.append(
             f"- [{e['calendar']}] {time_str}: {e['summary']}{loc}"
