@@ -1,10 +1,17 @@
-# Daily Itinerary
+# Stefanitsis Family Itinerary
 
-Morning email with today's calendar events and weather forecast for Dennis and Amy.
+Daily morning email with calendar events, weather, and an AI-generated summary for the Stefanitsis family (Dennis, Amy, Anna 12, Sophia 10) in Lafayette, CA.
 
 ## Stack
-- Python, Google Calendar API (service account), OpenWeatherMap, SendGrid, Jinja2
+- Python, Google Calendar API (service account), OpenWeatherMap, Claude Haiku (AI summary), SendGrid, Jinja2
 - Scheduled via GitHub Actions cron (6:30am PT daily)
+
+## Calendars
+| Calendar | ID |
+|----------|-----|
+| Dennis | `dennis.stefanitsis@gmail.com` |
+| Amy | `amylynnfischer@gmail.com` |
+| Family | `family05389224298174643941@group.calendar.google.com` |
 
 ## Running
 ```bash
@@ -13,17 +20,17 @@ pip install -r requirements.txt
 python itinerary.py
 ```
 
-## Setup
-1. Google Cloud Console → create project → enable Calendar API → create service account
-2. Download service account JSON key → paste as single-line JSON into `GOOGLE_SERVICE_ACCOUNT_KEY`
-3. Dennis shares Google Calendar with service account email (read-only)
-4. Amy shares her calendar too (optional) → add her calendar ID to `CALENDAR_IDS` in `itinerary.py`
-5. OpenWeatherMap → sign up → free API key → `OPENWEATHERMAP_API_KEY`
-6. SendGrid API key — currently sharing Glacier Point's key (TODO: create a separate SendGrid account/key for this project)
+## Env Vars
+| Variable | Source |
+|----------|--------|
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | GCP service account JSON (single line) |
+| `SENDGRID_API_KEY` | Shared from Glacier Point (TODO: separate) |
+| `OPENWEATHERMAP_API_KEY` | openweathermap.org free tier |
+| `ANTHROPIC_API_KEY` | console.anthropic.com |
 
 ## Files
 | File | Purpose |
 |------|---------|
-| `itinerary.py` | Main script — calendar + weather + render + send |
+| `itinerary.py` | Main script — calendar + weather + AI summary + render + send |
 | `templates/email.html` | Jinja2 HTML email template |
 | `.github/workflows/daily-send.yml` | GitHub Actions cron schedule |
