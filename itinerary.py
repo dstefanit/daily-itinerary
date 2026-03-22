@@ -1,13 +1,13 @@
 """
 Stefanitsis Family Itinerary — pulls Google Calendar events and weather,
 uses AI to summarize the day with practical nudges, sends a formatted
-morning email.
+morning email with week-ahead preview and upcoming birthdays.
 """
 
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -46,6 +46,19 @@ FAMILY_CONTEXT = (
     "Anna (12 year old daughter), Sophia (10 year old daughter). "
     "They live in Lafayette, CA."
 )
+
+# Birthdays and anniversaries — (month, day, label, year_born_or_married)
+# year is used to calculate age/years married
+SPECIAL_DATES = [
+    (8, 11, "Dennis's Birthday", 1981),
+    (6, 29, "Amy's Birthday", 1977),
+    (8, 21, "Anna's Birthday", 2013),
+    (9, 11, "Sophia's Birthday", 2015),
+    (11, 11, "Wedding Anniversary", 2012),
+]
+
+# How many days ahead to show upcoming birthdays/anniversaries
+SPECIAL_DATE_LOOKAHEAD_DAYS = 30
 
 
 def _build_calendar_service():
@@ -121,20 +134,57 @@ def get_today_events(service) -> list[dict]:
 
 
 def get_week_ahead_events(service) -> list[dict]:
-    """Fetch events for the rest of the week (tomorrow through Sunday).
-
-    Returns events grouped by day for the AI to summarize.
-    """
+    """Fetch events for the rest of the week (tomorrow through Sunday)."""
     now = datetime.now(TIMEZONE)
     tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
     # Days until end of Sunday (weekday 6 = Sunday)
     days_until_sunday = 6 - now.weekday()
     if days_until_sunday <= 0:
-        days_until_sunday = 7  # If today is Sunday, get next week
+        days_until_sunday = 7
     end_of_week = tomorrow + timedelta(days=days_until_sunday)
 
     return _fetch_events(service, tomorrow, end_of_week)
+
+
+def get_upcoming_special_dates() -> list[dict]:
+    """Check for birthdays and anniversaries in the next 30 days.
+
+    Returns:
+        List of dicts with keys: label, date, days_away, milestone
+    """
+    today = date.today()
+    upcoming = []
+
+    for month, day, label, origin_year in SPECIAL_DATES:
+        # This year's occurrence
+        try:
+            this_year_date = date(today.year, month, day)
+        except ValueError:
+            continue
+
+        # If it already passed this year, check next year
+        if this_year_date < today:
+            this_year_date = date(today.year + 1, month, day)
+
+        days_away = (this_year_date - today).days
+
+        if days_away <= SPECIAL_DATE_LOOKAHEAD_DAYS:
+            # Calculate milestone (age or years married)
+            milestone = None
+            if origin_year:
+                milestone = this_year_date.year - origin_year
+
+            upcoming.append({
+                "label": label,
+                "date": this_year_date,
+                "days_away": days_away,
+                "milestone": milestone,
+            })
+
+    # Sort by soonest first
+    upcoming.sort(key=lambda x: x["days_away"])
+    return upcoming
 
 
 def get_weather() -> dict:
@@ -142,7 +192,7 @@ def get_weather() -> dict:
 
     Returns:
         Dict with keys: temp, high, low, description, icon,
-        rain_chance, conditions_detail
+        rain_chance, uv_index
     """
     api_key = os.environ.get("OPENWEATHERMAP_API_KEY")
     if not api_key:
@@ -165,10 +215,7 @@ def get_weather() -> dict:
         current = data["current"]
         today_forecast = data["daily"][0]
 
-        # Rain probability (0-1 → percentage)
         rain_chance = round(today_forecast.get("pop", 0) * 100)
-
-        # UV index for sunscreen nudge
         uv_index = current.get("uvi", 0)
 
         return {
@@ -185,49 +232,30 @@ def get_weather() -> dict:
         return {}
 
 
-def _format_events_for_prompt(events: list[dict], include_day: bool = False) -> str:
-    """Format events as text lines for the AI prompt.
-
-    Args:
-        events: List of event dicts
-        include_day: Whether to include the day name (for week-ahead)
-
-    Returns:
-        Formatted string of events
-    """
+def _format_events_for_prompt(events: list[dict]) -> str:
+    """Format today's events as text lines for the AI prompt."""
     lines = []
     for e in events:
         time_str = "All Day" if e["all_day"] else e["start"].strftime("%-I:%M %p")
         loc = f" at {e['location']}" if e.get("location") else ""
-        day_prefix = ""
-        if include_day:
-            day_dt = e["start"]
-            if hasattr(day_dt, "astimezone"):
-                day_dt = day_dt.astimezone(TIMEZONE)
-            day_prefix = f"{day_dt.strftime('%A')} "
         lines.append(
-            f"- [{e['calendar']}] {day_prefix}{time_str}: {e['summary']}{loc}"
+            f"- [{e['calendar']}] {time_str}: {e['summary']}{loc}"
         )
-    return "\n".join(lines) if lines else "Nothing scheduled."
+    return "\n".join(lines) if lines else "No events today."
 
 
-def generate_summary(
-    events: list[dict],
-    week_ahead: list[dict],
-    weather: dict,
-) -> str:
-    """Use Claude to generate a friendly family day summary with nudges.
+def generate_summary(events: list[dict], weather: dict) -> str:
+    """Use Claude to generate a concise family day summary.
 
-    Includes weather-based reminders (rain gear, sunscreen, jackets) and
-    a brief look-ahead at the rest of the week.
+    Focused on today only — who has what, weather nudges. Week-ahead
+    and birthdays are handled separately in the template.
 
     Args:
         events: Today's calendar events
-        week_ahead: Events for the rest of the week
         weather: Weather data dict
 
     Returns:
-        AI-generated summary string (plain text)
+        AI-generated summary string (plain text, 2-4 sentences)
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -236,7 +264,6 @@ def generate_summary(
 
     today = datetime.now(TIMEZONE)
     events_text = _format_events_for_prompt(events)
-    week_text = _format_events_for_prompt(week_ahead, include_day=True)
 
     weather_text = ""
     if weather:
@@ -247,43 +274,32 @@ def generate_summary(
             f"UV index: {weather['uv_index']}."
         )
 
-    prompt = f"""You're writing a brief morning summary for the Stefanitsis family.
-
-{FAMILY_CONTEXT}
+    prompt = f"""{FAMILY_CONTEXT}
 
 Today is {today.strftime('%A, %B %-d, %Y')}.
 {weather_text}
 
-TODAY'S EVENTS (tagged by calendar — Dennis, Amy, or Family):
+Today's calendar events (tagged by source calendar — Dennis, Amy, or Family):
 {events_text}
 
-REST OF THE WEEK:
-{week_text}
-
-Write a morning note with these sections (use plain text, no markdown headers or \
-formatting — just natural paragraph breaks):
-
-1. TODAY (3-4 sentences): Summarize who has what today. Use your best judgment to \
-figure out which family member each event is for based on the event name and calendar. \
-Mention the weather briefly.
-
-2. DON'T FORGET (1-2 short sentences, only if relevant): Practical nudges based on \
-weather — e.g., "Grab an umbrella" if rain chance >30%, "Sunscreen for the kids" if \
-UV≥6 or high>85°, "Bundle up" if low<50°. Skip this section entirely if weather is \
-mild and clear.
-
-3. LOOKING AHEAD (1-2 sentences): Mention anything notable coming up this week so \
-the family can prep. If nothing stands out, skip this section.
-
-Keep it conversational and warm — like a quick note on the kitchen counter. No \
-greetings or sign-offs. Don't label the sections with headers, just flow naturally \
-between them with a line break."""
+Write exactly 2-4 sentences summarizing this family's day. Rules:
+- Assign each event to the most likely family member based on the event name \
+and which calendar it's on. Dennis's calendar = Dennis's events. Amy's calendar = \
+Amy's events. Family calendar = shared/kids events.
+- Mention the weather only if it's noteworthy (very hot, cold, rainy). Don't \
+comment on normal pleasant weather.
+- If rain chance >30%: mention grabbing an umbrella or rain jacket.
+- If UV index ≥6 or high temp >85°F: mention sunscreen.
+- If low temp <50°F: mention layering up or grabbing a jacket.
+- If no events: say it's an open day and suggest something brief and fun.
+- Tone: warm, casual, like a note left on the kitchen counter. No greetings, \
+no sign-offs, no emojis, no bullet points. Just flowing sentences."""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=400,
+            max_tokens=250,
             messages=[{"role": "user", "content": prompt}],
         )
         summary = message.content[0].text.strip()
@@ -304,15 +320,29 @@ def format_event_time(event: dict) -> str:
     return start.strftime("%-I:%M %p")
 
 
+def format_week_event_day(event: dict) -> str:
+    """Format an event's day name for the week-ahead section."""
+    dt = event["start"]
+    if hasattr(dt, "astimezone"):
+        dt = dt.astimezone(TIMEZONE)
+    return dt.strftime("%A")
+
+
 def render_email(
-    events: list[dict], weather: dict, summary: str
+    events: list[dict],
+    week_ahead: list[dict],
+    weather: dict,
+    summary: str,
+    special_dates: list[dict],
 ) -> str:
     """Render the HTML email using Jinja2 template.
 
     Args:
-        events: List of calendar event dicts
+        events: Today's calendar events
+        week_ahead: Events for the rest of the week
         weather: Weather data dict
         summary: AI-generated day summary
+        special_dates: Upcoming birthdays/anniversaries
 
     Returns:
         Rendered HTML string
@@ -326,10 +356,13 @@ def render_email(
         date_header=today.strftime("%A, %B %-d"),
         year=today.strftime("%Y"),
         events=events,
+        week_ahead=week_ahead,
         weather=weather,
         summary=summary,
+        special_dates=special_dates,
         location=LOCATION,
         format_time=format_event_time,
+        format_day=format_week_event_day,
     )
 
 
@@ -379,7 +412,14 @@ def main() -> None:
 
     logger.info("Fetching week-ahead events...")
     week_ahead = get_week_ahead_events(service) if service else []
-    logger.info(f"Found {len(week_ahead)} event(s) this week")
+    logger.info(f"Found {len(week_ahead)} event(s) rest of week")
+
+    logger.info("Checking upcoming birthdays/anniversaries...")
+    special_dates = get_upcoming_special_dates()
+    if special_dates:
+        logger.info(
+            f"Upcoming: {', '.join(s['label'] for s in special_dates)}"
+        )
 
     logger.info("Fetching weather...")
     weather = get_weather()
@@ -391,9 +431,9 @@ def main() -> None:
         )
 
     logger.info("Generating AI summary...")
-    summary = generate_summary(events, week_ahead, weather)
+    summary = generate_summary(events, weather)
 
-    html = render_email(events, weather, summary)
+    html = render_email(events, week_ahead, weather, summary, special_dates)
     send_email(html)
     logger.info("Done.")
 

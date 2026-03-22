@@ -33,9 +33,9 @@
     </td>
     <td style="vertical-align:middle; text-align:right;">
       <p style="margin:0; font-size:14px; color:#111827;">
-        <span style="color:#dc2626;">↑ {{ weather.high }}°</span>
-        <span style="color:#9ca3af; padding:0 2px;">·</span>
-        <span style="color:#2563eb;">↓ {{ weather.low }}°</span>
+        <span style="color:#dc2626;">&#8593; {{ weather.high }}°</span>
+        <span style="color:#9ca3af; padding:0 2px;">&middot;</span>
+        <span style="color:#2563eb;">&#8595; {{ weather.low }}°</span>
       </p>
       <p style="margin:2px 0 0; font-size:12px; color:#9ca3af;">{{ location }}</p>
     </td>
@@ -60,16 +60,16 @@
 </tr>
 {% endif %}
 
-<!-- Schedule Header -->
+<!-- Today's Schedule -->
 <tr>
 <td style="padding:4px 32px 8px;">
-  <p style="margin:0; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9ca3af; font-weight:600;">Schedule</p>
+  <p style="margin:0; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9ca3af; font-weight:600;">Today's Schedule</p>
 </td>
 </tr>
 
 {% if events %}
 <tr>
-<td style="padding:0 32px 28px;">
+<td style="padding:0 32px 24px;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
   {% for event in events %}
   <tr>
@@ -83,7 +83,7 @@
         </td>
         <td style="vertical-align:top; padding-left:12px;">
           <p style="margin:0; font-size:15px; font-weight:500; color:#111827;">{{ event.summary }}</p>
-          <p style="margin:2px 0 0; font-size:12px; color:#9ca3af;">{{ event.calendar }}{% if event.location %} · 📍 {{ event.location }}{% endif %}</p>
+          <p style="margin:2px 0 0; font-size:12px; color:#9ca3af;">{{ event.calendar }}{% if event.location %} &middot; {{ event.location }}{% endif %}</p>
         </td>
       </tr>
       </table>
@@ -95,8 +95,82 @@
 </tr>
 {% else %}
 <tr>
-<td style="padding:12px 32px 28px;">
+<td style="padding:12px 32px 24px;">
   <p style="margin:0; font-size:15px; color:#6b7280; text-align:center; padding:16px 0;">Nothing on the calendar — enjoy the open day.</p>
+</td>
+</tr>
+{% endif %}
+
+{% if week_ahead %}
+<!-- Looking Ahead -->
+<tr>
+<td style="padding:4px 32px 8px; border-top:1px solid #f3f4f6;">
+  <p style="margin:12px 0 0; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9ca3af; font-weight:600;">Looking Ahead</p>
+</td>
+</tr>
+<tr>
+<td style="padding:0 32px 24px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  {% for event in week_ahead %}
+  <tr>
+    <td style="padding:8px 0; {% if not loop.last %}border-bottom:1px solid #f3f4f6;{% endif %}">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="90" style="vertical-align:top;">
+          <p style="margin:0; font-size:12px; font-weight:600; color:#6b7280;">{{ format_day(event) }}</p>
+          {% if not event.all_day %}
+          <p style="margin:1px 0 0; font-size:11px; color:#9ca3af;">{{ format_time(event) }}</p>
+          {% endif %}
+        </td>
+        <td style="vertical-align:top; padding-left:10px;">
+          <p style="margin:0; font-size:14px; font-weight:500; color:#374151;">{{ event.summary }}</p>
+          <p style="margin:1px 0 0; font-size:11px; color:#9ca3af;">{{ event.calendar }}{% if event.location %} &middot; {{ event.location }}{% endif %}</p>
+        </td>
+      </tr>
+      </table>
+    </td>
+  </tr>
+  {% endfor %}
+  </table>
+</td>
+</tr>
+{% endif %}
+
+{% if special_dates %}
+<!-- Upcoming Birthdays & Anniversaries -->
+<tr>
+<td style="padding:4px 32px 8px; border-top:1px solid #f3f4f6;">
+  <p style="margin:12px 0 0; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9ca3af; font-weight:600;">Upcoming</p>
+</td>
+</tr>
+<tr>
+<td style="padding:0 32px 24px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  {% for sd in special_dates %}
+  <tr>
+    <td style="padding:10px 0; {% if not loop.last %}border-bottom:1px solid #f3f4f6;{% endif %}">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="vertical-align:middle;">
+          <p style="margin:0; font-size:15px; font-weight:500; color:#111827;">
+            {% if 'Birthday' in sd.label %}&#127874;{% else %}&#10084;&#65039;{% endif %}
+            {{ sd.label }}{% if sd.milestone %} — {% if 'Anniversary' in sd.label %}{{ sd.milestone }} years{% else %}turning {{ sd.milestone }}{% endif %}{% endif %}
+          </p>
+          <p style="margin:2px 0 0; font-size:12px; color:#9ca3af;">
+            {{ sd.date.strftime('%A, %B %-d') }}
+            &middot;
+            {% if sd.days_away == 0 %}Today!
+            {% elif sd.days_away == 1 %}Tomorrow
+            {% else %}{{ sd.days_away }} days away
+            {% endif %}
+          </p>
+        </td>
+      </tr>
+      </table>
+    </td>
+  </tr>
+  {% endfor %}
+  </table>
 </td>
 </tr>
 {% endif %}
@@ -104,7 +178,7 @@
 <!-- Footer -->
 <tr>
 <td style="padding:14px 32px; text-align:center; border-top:1px solid #f3f4f6;">
-  <p style="margin:0; font-size:11px; color:#bcbcbc;">Lafayette, CA · {{ year }}</p>
+  <p style="margin:0; font-size:11px; color:#bcbcbc;">Lafayette, CA &middot; {{ year }}</p>
 </td>
 </tr>
 
