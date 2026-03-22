@@ -12,7 +12,7 @@ Extra context to help the AI interpret calendar events accurately.
 - "Springbrook" or "swim" → Sophia's swim team (Springbrook Swim Team). Practice times: 10&up group is 5:35 PM - 6:20 PM. Bring competitive suit, goggles, swim cap. Team contact: Lauren Deal.
 - "Luna" or "gymnastics" → Sophia's gymnastics at Luna Gymnastics in Moraga. Super Stars class, Wednesdays at 2:30 PM with Coach Wayne.
 - "volleyball" → Both Anna and Sophia play volleyball. Registered through LMYA Sports.
-- "LAMO" → Anna's soccer team (LAMO Soccer / Lamorinda Soccer Club). Team: 2013G Navy. ICS feed pulls schedule directly. Practice at Wilder Fields (Orinda) and LaMO Arena (452 Center St, Moraga). Private lessons with Coach Luis.
+- "LAMO" → Anna's soccer team (LAMO Soccer / Lamorinda Soccer Club). Team: 2013G Navy. ICS feed pulls schedule directly. Practice at Wilder Fields (Orinda) and LaMO Arena (452 Center St, Moraga). Coach Luis is the LAMO coach — any event mentioning "Luis" is Anna's soccer.
 - "Eclipse" → Sophia's soccer team (East Bay Eclipse Soccer Club). Team: 2015 Girls Solar. ICS feed pulls schedule directly. Practice at Wilder Sports Complex (Orinda). 2026-27 tryout registration is open.
 - "Tech rehearsal" or "Alice in Wonderland" → School play/performance rehearsal. Recent: Town Hall Theatre Company's Alice in Wonderland production.
 
@@ -84,7 +84,7 @@ Extra context to help the AI interpret calendar events accurately.
 - **Skip senders**: Google Ads promo emails, Google Cloud product updates, CVS promotions, Costco Visa FICO score updates, Chase "see how your home compares" marketing.
 - **Done label**: Dennis labels emails "Done" in Gmail when he's handled them. The scanner excludes anything labeled Done. This is how items drop off the daily email.
 - **Tiered action items**: Items are sorted into DUE NOW (red, ≤3 days), THIS WEEK (amber, ≤7 days), and ON RADAR (gray, 7-14 days). Up to 5/5/3 items per tier.
-- **Color coding**: Calendar events are color-coded by family member — Anna=pink, Sophia=yellow, Dennis=blue, Amy=pink. Each entry shows a small name tag pill next to the event title.
+- **Color coding**: Calendar events are color-coded by family member — Anna=pink, Sophia=yellow, Dennis=blue, Amy=purple. Each entry shows a small name tag pill next to the event title. Person detection uses calendar name + keyword matching (e.g., "swim"→Sophia, "Luis"/"LAMO"→Anna, "Eclipse"→Sophia).
 - **ICS feeds**: Kids' soccer schedules are pulled directly from BYGA webcal feeds (not Google Calendar subscriptions). Events are cleaned to show "Soccer Practice", "Soccer @ Opponent", etc. with venue-only locations.
 - **Auto-skip**: Payment confirmations ("thanks for your payment") are not action items — the bill is already paid.
 - **AI refinement**: The AI should continue learning from patterns in Dennis's email and calendar to improve what it surfaces vs. filters out over time. When a new recurring bill or obligation is detected, note it here for future runs.

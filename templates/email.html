@@ -89,14 +89,14 @@
       <td style="padding:10px 0; {% if not loop.last %}border-bottom:1px solid #e8ecf1;{% endif %}">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
         <tr>
-          {# Color dot: Anna=pink, Sophia=yellow, Dennis=blue, Amy=pink, Family=gray #}
+          {# Color dot + name tag: Anna=pink, Sophia=yellow, Dennis=blue, Amy=purple #}
+          {% set person = event.person|default('') %}
           {% set dot_color = '#9ca3af' %}
-          {% set cal_lower = event.calendar|lower %}
-          {% if 'anna' in cal_lower %}{% set dot_color = '#ec4899' %}
-          {% elif 'sophia' in cal_lower %}{% set dot_color = '#eab308' %}
-          {% elif 'dennis' in cal_lower %}{% set dot_color = '#3b82f6' %}
-          {% elif 'amy' in cal_lower %}{% set dot_color = '#ec4899' %}
-          {% elif 'family' in cal_lower %}{% set dot_color = '#6b7280' %}
+          {% set tag_name = '' %}{% set tag_bg = '' %}{% set tag_fg = '' %}
+          {% if person == 'anna' %}{% set dot_color = '#ec4899' %}{% set tag_name = 'Anna' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
+          {% elif person == 'sophia' %}{% set dot_color = '#eab308' %}{% set tag_name = 'Sophia' %}{% set tag_bg = '#fefce8' %}{% set tag_fg = '#ca8a04' %}
+          {% elif person == 'dennis' %}{% set dot_color = '#3b82f6' %}{% set tag_name = 'Dennis' %}{% set tag_bg = '#eff6ff' %}{% set tag_fg = '#2563eb' %}
+          {% elif person == 'amy' %}{% set dot_color = '#8b5cf6' %}{% set tag_name = 'Amy' %}{% set tag_bg = '#f5f3ff' %}{% set tag_fg = '#7c3aed' %}
           {% endif %}
           <td width="10" style="vertical-align:top; padding-top:4px;">
             <div style="width:10px; height:10px; border-radius:50%; background-color:{{ dot_color }};"></div>
@@ -106,13 +106,6 @@
               {{ format_time(event) }}
             </p>
           </td>
-          {# Name tag: derive from calendar #}
-          {% set tag_name = '' %}{% set tag_bg = '' %}{% set tag_fg = '' %}
-          {% if 'anna' in cal_lower %}{% set tag_name = 'Anna' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
-          {% elif 'sophia' in cal_lower %}{% set tag_name = 'Sophia' %}{% set tag_bg = '#fefce8' %}{% set tag_fg = '#ca8a04' %}
-          {% elif 'dennis' in cal_lower %}{% set tag_name = 'Dennis' %}{% set tag_bg = '#eff6ff' %}{% set tag_fg = '#2563eb' %}
-          {% elif 'amy' in cal_lower %}{% set tag_name = 'Amy' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
-          {% endif %}
           <td style="vertical-align:top; padding-left:8px;">
             <p style="margin:0; font-size:15px; font-weight:500; color:#111827;">{% if tag_name %}<span style="font-size:10px; font-weight:700; color:{{ tag_fg }}; background:{{ tag_bg }}; border-radius:3px; padding:1px 5px; margin-right:4px; vertical-align:middle; display:inline-block; line-height:16px;">{{ tag_name }}</span> {% endif %}{{ event.summary }}{% if event.location %} <span style="font-weight:400; font-size:13px; color:#9ca3af;">&middot; {{ event.location }}</span>{% endif %}</p>
             {% if event.note %}<p style="margin:3px 0 0; font-size:12px; color:#6366f1; font-style:italic;">{{ event.note }}</p>{% endif %}
@@ -162,21 +155,14 @@
     <td style="padding:5px 0 5px 0;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr>
-        {# Color dot: Anna=pink, Sophia=yellow, Dennis=blue, Amy=pink, Family=gray #}
+        {# Color dot + name tag: Anna=pink, Sophia=yellow, Dennis=blue, Amy=purple #}
+        {% set person = event.person|default('') %}
         {% set dot_color = '#9ca3af' %}
-        {% set cal_lower = event.calendar|lower %}
-        {% if 'anna' in cal_lower %}{% set dot_color = '#ec4899' %}
-        {% elif 'sophia' in cal_lower %}{% set dot_color = '#eab308' %}
-        {% elif 'dennis' in cal_lower %}{% set dot_color = '#3b82f6' %}
-        {% elif 'amy' in cal_lower %}{% set dot_color = '#ec4899' %}
-        {% elif 'family' in cal_lower %}{% set dot_color = '#6b7280' %}
-        {% endif %}
-        {# Name tag #}
         {% set tag_name = '' %}{% set tag_bg = '' %}{% set tag_fg = '' %}
-        {% if 'anna' in cal_lower %}{% set tag_name = 'Anna' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
-        {% elif 'sophia' in cal_lower %}{% set tag_name = 'Sophia' %}{% set tag_bg = '#fefce8' %}{% set tag_fg = '#ca8a04' %}
-        {% elif 'dennis' in cal_lower %}{% set tag_name = 'Dennis' %}{% set tag_bg = '#eff6ff' %}{% set tag_fg = '#2563eb' %}
-        {% elif 'amy' in cal_lower %}{% set tag_name = 'Amy' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
+        {% if person == 'anna' %}{% set dot_color = '#ec4899' %}{% set tag_name = 'Anna' %}{% set tag_bg = '#fdf2f8' %}{% set tag_fg = '#db2777' %}
+        {% elif person == 'sophia' %}{% set dot_color = '#eab308' %}{% set tag_name = 'Sophia' %}{% set tag_bg = '#fefce8' %}{% set tag_fg = '#ca8a04' %}
+        {% elif person == 'dennis' %}{% set dot_color = '#3b82f6' %}{% set tag_name = 'Dennis' %}{% set tag_bg = '#eff6ff' %}{% set tag_fg = '#2563eb' %}
+        {% elif person == 'amy' %}{% set dot_color = '#8b5cf6' %}{% set tag_name = 'Amy' %}{% set tag_bg = '#f5f3ff' %}{% set tag_fg = '#7c3aed' %}
         {% endif %}
         <td width="8" style="vertical-align:top; padding-top:5px;">
           <div style="width:8px; height:8px; border-radius:50%; background-color:{{ dot_color }};"></div>

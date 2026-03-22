@@ -105,6 +105,51 @@ def _build_calendar_service():
     return build("calendar", "v3", credentials=creds)
 
 
+def _detect_person(calendar: str, summary: str) -> str:
+    """Detect which family member an event belongs to.
+
+    Uses calendar name first, then falls back to keyword matching
+    in the event summary. Returns 'anna', 'sophia', 'dennis', 'amy',
+    or '' if no match.
+    """
+    cal = calendar.lower()
+    summ = summary.lower()
+
+    # Calendar name is the strongest signal
+    if "anna" in cal:
+        return "anna"
+    if "sophia" in cal:
+        return "sophia"
+    if "dennis" in cal:
+        return "dennis"
+    if "amy" in cal:
+        return "amy"
+
+    # Keyword fallback from event summary
+    # Anna: LAMO soccer, Coach Luis, Stanley Middle School
+    anna_keywords = ["lamo", "luis", "lamorinda soccer", "stanley"]
+    if any(k in summ for k in anna_keywords):
+        return "anna"
+
+    # Sophia: swim, Springbrook, Eclipse soccer, Luna gymnastics
+    sophia_keywords = [
+        "swim", "springbrook", "eclipse", "luna", "gymnastics",
+        "play sophia", "sophia",
+    ]
+    if any(k in summ for k in sophia_keywords):
+        return "sophia"
+
+    # Check for names directly in summary
+    if "anna" in summ:
+        return "anna"
+    if "dennis" in summ:
+        return "dennis"
+    if "amy" in summ:
+        return "amy"
+
+    return ""
+
+
 def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]:
     """Fetch events from all calendars within a time range.
 
@@ -162,6 +207,7 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                     "location": _clean_location(event.get("location", "")),
                     "all_day": all_day,
                     "calendar": cal_label,
+                    "person": _detect_person(cal_label, summary),
                 })
         except Exception as e:
             logger.error(f"Failed to fetch calendar {cal_label}: {e}")
@@ -309,6 +355,7 @@ def _fetch_ics_events(
                     "location": location,
                     "all_day": all_day,
                     "calendar": label,
+                    "person": _detect_person(label, summary),
                 })
 
             logger.info(f"ICS feed '{label}': fetched, "
