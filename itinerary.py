@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import anthropic
 import requests
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from jinja2 import Environment, FileSystemLoader
 from sendgrid import SendGridAPIClient
@@ -27,10 +28,6 @@ TIMEZONE = ZoneInfo("America/Los_Angeles")
 LOCATION = "Lafayette, CA"
 LAT, LON = 37.8858, -122.1233  # Lafayette, CA
 
-RECIPIENTS = [
-    "dennis.stefanitsis@gmail.com",
-    "amylynnfischer@gmail.com",
-]
 SENDER = "dennis@glacierpointinsurance.agency"
 
 # Calendar ID → label for organizing events
@@ -269,6 +266,114 @@ def get_weather() -> dict:
         return {}
 
 
+def get_gmail_action_items() -> list[str]:
+    """Scan personal Gmail for recent emails and extract action items.
+
+    Uses OAuth refresh token to access dennis.stefanitsis@gmail.com,
+    pulls the last 3 days of inbox messages, and uses Claude to
+    identify actionable items.
+
+    Returns:
+        List of action item strings (max 5)
+    """
+    refresh_token = os.environ.get("GMAIL_REFRESH_TOKEN")
+    gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
+    gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    if not all([refresh_token, gmail_client_id, gmail_client_secret]):
+        logger.warning("Gmail OAuth not configured — skipping action items")
+        return []
+    if not anthropic_key:
+        logger.warning("ANTHROPIC_API_KEY not set — skipping action items")
+        return []
+
+    try:
+        # Build Gmail credentials from refresh token
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            client_id=gmail_client_id,
+            client_secret=gmail_client_secret,
+            token_uri="https://oauth2.googleapis.com/token",
+        )
+        gmail = build("gmail", "v1", credentials=creds)
+
+        # Search for inbox messages from the last 3 days
+        now = datetime.now(TIMEZONE)
+        after_date = (now - timedelta(days=3)).strftime("%Y/%m/%d")
+        query = f"in:inbox after:{after_date}"
+
+        results = gmail.users().messages().list(
+            userId="me", q=query, maxResults=30
+        ).execute()
+        messages = results.get("messages", [])
+
+        if not messages:
+            logger.info("No recent Gmail messages found")
+            return []
+
+        # Fetch snippet + headers for each message
+        email_summaries = []
+        for msg in messages[:30]:
+            msg_data = gmail.users().messages().get(
+                userId="me", id=msg["id"], format="metadata",
+                metadataHeaders=["From", "Subject", "Date"],
+            ).execute()
+
+            headers = {
+                h["name"]: h["value"]
+                for h in msg_data.get("payload", {}).get("headers", [])
+            }
+            snippet = msg_data.get("snippet", "")
+            email_summaries.append(
+                f"From: {headers.get('From', 'Unknown')}\n"
+                f"Subject: {headers.get('Subject', '(no subject)')}\n"
+                f"Preview: {snippet[:200]}"
+            )
+
+        emails_text = "\n---\n".join(email_summaries)
+        logger.info(f"Fetched {len(email_summaries)} Gmail messages")
+
+        # Use Claude to extract action items
+        prompt = f"""Review these personal emails from Dennis Stefanitsis's Gmail \
+(dennis.stefanitsis@gmail.com) from the last 3 days. This is his PERSONAL email, \
+not his business email.
+
+{emails_text}
+
+Extract up to 5 action items that Dennis needs to follow up on. Rules:
+- Only include things that require Dennis to DO something (reply, sign, pay, \
+schedule, etc.)
+- Skip newsletters, promotions, notifications that don't need action
+- Skip anything that's clearly already been handled (replies sent, etc.)
+- Each action item should be one concise sentence
+- If there are no real action items, return "No action items"
+- Format: Return ONLY a JSON array of strings, nothing else
+
+Example: ["Reply to Dr. Smith about appointment reschedule", \
+"Pay PG&E bill due March 25"]"""
+
+        client = anthropic.Anthropic(api_key=anthropic_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = message.content[0].text.strip()
+
+        # Parse the JSON array
+        if "No action items" in response_text:
+            return []
+        items = json.loads(response_text)
+        logger.info(f"Found {len(items)} action item(s)")
+        return items[:5]
+
+    except Exception as e:
+        logger.error(f"Gmail action items failed: {e}")
+        return []
+
+
 def _format_events_for_prompt(events: list[dict]) -> str:
     """Format today's events as text lines for the AI prompt."""
     lines = []
@@ -382,6 +487,7 @@ def render_email(
     weather: dict,
     summary: str,
     special_dates: list[dict],
+    action_items: list[str],
 ) -> str:
     """Render the HTML email using Jinja2 template.
 
@@ -391,6 +497,7 @@ def render_email(
         weather: Weather data dict
         summary: AI-generated day summary
         special_dates: Upcoming birthdays/anniversaries
+        action_items: AI-extracted email action items
 
     Returns:
         Rendered HTML string
@@ -408,14 +515,21 @@ def render_email(
         weather=weather,
         summary=summary,
         special_dates=special_dates,
+        action_items=action_items,
         location=LOCATION,
         format_time=format_event_time,
         format_day=format_week_event_day,
     )
 
 
-def send_email(html: str) -> None:
-    """Send the itinerary email via SendGrid."""
+def send_email(
+    dennis_html: str, family_html: str
+) -> None:
+    """Send the itinerary email via SendGrid.
+
+    Dennis gets the full version (with action items).
+    Amy gets the family version (no action items).
+    """
     api_key = os.environ.get("SENDGRID_API_KEY")
     if not api_key:
         logger.error("SENDGRID_API_KEY not set — cannot send email")
@@ -428,7 +542,12 @@ def send_email(html: str) -> None:
 
     sg = SendGridAPIClient(api_key)
 
-    for recipient in RECIPIENTS:
+    sends = [
+        ("dennis.stefanitsis@gmail.com", dennis_html),
+        ("amylynnfischer@gmail.com", family_html),
+    ]
+
+    for recipient, html in sends:
         message = Mail(
             from_email=Email(SENDER, "Family Itinerary"),
             to_emails=To(recipient),
@@ -478,11 +597,23 @@ def main() -> None:
             f"rain: {weather['rain_chance']}%, UV: {weather['uv_index']})"
         )
 
+    logger.info("Scanning personal Gmail for action items...")
+    action_items = get_gmail_action_items()
+
     logger.info("Generating AI summary...")
     summary = generate_summary(events, weather)
 
-    html = render_email(events, week_ahead, weather, summary, special_dates)
-    send_email(html)
+    # Dennis gets the full version with action items
+    dennis_html = render_email(
+        events, week_ahead, weather, summary,
+        special_dates, action_items,
+    )
+    # Amy gets the family version without action items
+    family_html = render_email(
+        events, week_ahead, weather, summary,
+        special_dates, action_items=[],
+    )
+    send_email(dennis_html, family_html)
     logger.info("Done.")
 
 
