@@ -40,6 +40,13 @@ SEARCHES = [
     "birthday party invitation",
     "vet OR veterinarian OR pet appointment",
     "pharmacy OR prescription OR refill",
+    "from:united.com OR from:united airlines",
+    "from:delta.com OR from:southwest.com OR from:aa.com",
+    "flight confirmation OR booking confirmation OR e-ticket",
+    "hotel reservation OR hotel confirmation",
+    "from:airbnb.com OR from:vrbo.com",
+    "rental car confirmation OR from:enterprise.com OR from:hertz.com",
+    "boarding pass OR airline itinerary",
 ]
 
 
@@ -146,13 +153,17 @@ Your job:
    - Sports teams, coaches, practice schedules, locations
    - Schools, teachers
    - Recurring activities or classes
+   - Upcoming travel: flights, hotels, Airbnb, rental cars, trips
    - Any other family logistics
 2. MERGE new findings into the existing file structure, preserving ALL existing content
 3. Do NOT remove or modify any existing entries unless correcting clearly outdated info
-4. Do NOT add promotional/spam content, one-time events, or transient info
+4. Do NOT add promotional/spam content or transient info
 5. Keep the same markdown format and section structure
 6. If a section doesn't exist yet, create it in the appropriate place
-7. If nothing new was found, return the file EXACTLY as-is
+7. Travel goes in a "## Upcoming Travel" section with destination, dates, \
+confirmation numbers, and any logistics
+8. REMOVE travel entries whose dates have already passed
+9. If nothing new was found, return the file EXACTLY as-is
 
 Return ONLY the complete updated family_context.md content, no explanation."""
 

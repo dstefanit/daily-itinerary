@@ -81,7 +81,7 @@ SPECIAL_DATES = [
 ]
 
 # How many days ahead to show upcoming birthdays/anniversaries
-SPECIAL_DATE_LOOKAHEAD_DAYS = 30
+SPECIAL_DATE_LOOKAHEAD_DAYS = 90
 
 
 def _build_calendar_service():
@@ -121,15 +121,21 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                 orderBy="startTime",
             ).execute()
 
+            # Family names — only their birthdays are tracked separately
+            family_names = {"dennis", "amy", "anna", "sophia"}
+
             for event in result.get("items", []):
-                # Skip birthday events (Google Contacts birthdays)
+                # Skip birthday events (Google Contacts auto-generated)
                 if event.get("eventType") == "birthday":
                     continue
                 summary = event.get("summary", "(No title)")
                 summary_lower = summary.lower()
-                # Filter all birthday-like events from contacts
-                if "birthday" in summary_lower:
-                    continue
+                # Filter all birthday-like events (birthday, bday, b-day)
+                # unless it's a family member's birthday party we're hosting
+                if any(w in summary_lower for w in ("birthday", "bday", "b-day")):
+                    # Keep only if it's clearly a party event we're attending
+                    if "party" not in summary_lower:
+                        continue
 
                 start = event["start"]
                 end = event["end"]
@@ -254,6 +260,99 @@ def get_upcoming_special_dates() -> list[dict]:
     # Sort by soonest first
     upcoming.sort(key=lambda x: x["days_away"])
     return upcoming
+
+
+def get_upcoming_travel(service) -> list[dict]:
+    """Find upcoming travel from calendar events and family_context.md.
+
+    Searches calendars for travel-related events (flights, hotels, trips)
+    in the next 60 days, plus any travel listed in the context file.
+    Uses Claude to dedupe and structure everything.
+
+    Args:
+        service: Google Calendar API service client
+
+    Returns:
+        List of dicts with keys: trip, dates, details
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return []
+
+    # 1. Search calendars for travel-related events (next 60 days)
+    travel_events = []
+    if service:
+        now = datetime.now(TIMEZONE)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=60)
+
+        travel_keywords = [
+            "flight", "fly", "airport", "airline", "united",
+            "hotel", "airbnb", "vrbo", "resort", "cabin",
+            "trip", "vacation", "travel",
+        ]
+
+        all_events = _fetch_events(service, start, end)
+        for e in all_events:
+            summary_lower = e["summary"].lower()
+            loc_lower = (e.get("location") or "").lower()
+            combined = summary_lower + " " + loc_lower
+            if any(kw in combined for kw in travel_keywords):
+                dt = e["start"]
+                if hasattr(dt, "astimezone"):
+                    dt = dt.astimezone(TIMEZONE)
+                travel_events.append(
+                    f"- {dt.strftime('%b %-d')}: {e['summary']}"
+                    f"{' at ' + e['location'] if e.get('location') else ''}"
+                )
+
+    # 2. Check family_context.md for travel section
+    context_travel = ""
+    context = FAMILY_CONTEXT
+    if "## Upcoming Travel" in context:
+        travel_start = context.index("## Upcoming Travel")
+        next_section = context.find("\n## ", travel_start + 1)
+        section = context[travel_start:next_section] if next_section > 0 else context[travel_start:]
+        if section.strip() != "## Upcoming Travel":
+            context_travel = section
+
+    # Combine sources
+    all_travel_text = ""
+    if travel_events:
+        all_travel_text += "Calendar events:\n" + "\n".join(travel_events)
+    if context_travel:
+        all_travel_text += "\n\n" + context_travel
+
+    if not all_travel_text.strip():
+        return []
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{"role": "user", "content": f"""Extract upcoming travel from these sources. \
+Today is {today}. Only include future trips, not past ones. \
+Group related events into single trips (e.g., a flight + hotel = one trip).
+
+{all_travel_text}
+
+Return a JSON array of objects with these keys:
+- "trip": short destination/name (e.g., "Tahoe Family Trip")
+- "dates": date range as string (e.g., "Apr 10-13")
+- "details": one-line logistics (e.g., "United SFO-DEN, Airbnb in Breckenridge")
+
+If no upcoming trips, return [].
+Return ONLY the JSON array, nothing else."""}],
+        )
+        response_text = _strip_code_fences(message.content[0].text)
+        trips = json.loads(response_text)
+        logger.info(f"Found {len(trips)} upcoming trip(s)")
+        return trips
+    except Exception as e:
+        logger.error(f"Travel extraction failed: {e}")
+        return []
 
 
 def _get_weather_grab(weather: dict) -> str:
@@ -650,6 +749,7 @@ def render_email(
     summary: str,
     special_dates: list[dict],
     action_items: list[str],
+    travel: list[dict],
 ) -> str:
     """Render the HTML email using Jinja2 template.
 
@@ -660,6 +760,7 @@ def render_email(
         summary: AI-generated day summary
         special_dates: Upcoming birthdays/anniversaries
         action_items: AI-extracted email action items
+        travel: Upcoming trips
 
     Returns:
         Rendered HTML string
@@ -679,6 +780,7 @@ def render_email(
         summary=summary,
         special_dates=special_dates,
         action_items=action_items,
+        travel=travel,
         location=LOCATION,
         format_time=format_event_time,
         format_day=format_week_event_day,
@@ -764,6 +866,9 @@ def main() -> None:
             f"rain: {weather['rain_chance']}%, UV: {weather['uv_index']})"
         )
 
+    logger.info("Checking upcoming travel...")
+    travel = get_upcoming_travel(service)
+
     logger.info("Scanning personal Gmail for action items...")
     action_items = get_gmail_action_items()
 
@@ -773,12 +878,12 @@ def main() -> None:
     # Dennis gets the full version with action items
     dennis_html = render_email(
         events, week_ahead, weather, summary,
-        special_dates, action_items,
+        special_dates, action_items, travel,
     )
     # Amy gets the family version without action items
     family_html = render_email(
         events, week_ahead, weather, summary,
-        special_dates, action_items=[],
+        special_dates, action_items=[], travel=travel,
     )
     send_email(dennis_html, family_html)
     logger.info("Done.")
