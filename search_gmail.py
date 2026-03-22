@@ -23,23 +23,40 @@ CONTEXT_FILE = Path(__file__).parent / "family_context.md"
 
 # Gmail search queries — add new ones here as needed
 SEARCHES = [
+    # Medical
     "doctor appointment OR physician OR medical OR annual physical",
     "pediatrician OR pediatric OR kids doctor",
     "dentist OR dental appointment OR dental cleaning",
     "orthodontist OR ortho OR braces",
     "eye doctor OR optometrist OR ophthalmologist OR vision",
+    "pharmacy OR prescription OR refill",
+    # Kids activities
     "volleyball club OR volleyball practice OR volleyball registration",
     "LAMO soccer OR LAMO registration",
     "eclipse soccer OR eclipse registration",
     "swim team OR springbrook OR swim practice",
     "gymnastics OR luna gymnastics",
     "piano lesson OR music lesson OR tutor OR tutoring",
-    "school registration OR school enrollment OR parent teacher",
-    "Stanley middle school OR Lafayette elementary",
     "camp OR summer camp registration",
     "birthday party invitation",
-    "vet OR veterinarian OR pet appointment",
-    "pharmacy OR prescription OR refill",
+    "from:jackrabbittech.com",  # Town Hall Theatre
+    # Schools
+    "school registration OR school enrollment OR parent teacher",
+    "Stanley middle school OR Lafayette elementary",
+    "from:parentsquare.com",
+    # Bills & financial
+    "from:billpay.pge.com OR from:em.pge.com",
+    "from:account.xfinity.com",
+    "from:ecrmemail.verizonwireless.com",
+    "from:no-reply@invoicecloud.net",  # Placer County property tax
+    "from:no.reply.alerts@chase.com",
+    "from:payments.pureinsurance.com",
+    "from:info6.citi.com OR from:info15.citi.com",  # Costco Visa
+    "from:notifications.usbank.com",
+    "from:mail.fidelity.com subject:action",
+    "from:notify.cloudflare.com subject:invoice",
+    "from:NJCourtNotice.mbx@njcourts.gov",
+    # Travel
     "from:united.com OR from:united airlines",
     "from:delta.com OR from:southwest.com OR from:aa.com",
     "flight confirmation OR booking confirmation OR e-ticket",

@@ -12,8 +12,11 @@ and add it as a GitHub secret (GMAIL_REFRESH_TOKEN).
 import json
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Gmail read-only scope
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+# Gmail scopes: read messages + manage labels (for "Done" label)
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.labels",
+]
 
 
 def main() -> None:

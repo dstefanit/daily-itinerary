@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 import requests
+import icalendar
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -35,6 +36,12 @@ CALENDARS = {
     "dennis.stefanitsis@gmail.com": "Dennis",
     "amylynnfischer@gmail.com": "Amy",
     "family05389224298174643941@group.calendar.google.com": "Family",
+}
+
+# ICS/webcal feeds — fetched directly, no Google Calendar subscription needed
+ICS_FEEDS = {
+    "https://lamorindasc.byga.net/cal/dnphjqyNfD.ics": "Anna Soccer",
+    "https://eastbayeclipse.byga.net/cal/aoXhNbLkFA.ics": "Sophia Soccer",
 }
 
 # Family context for the AI summary — loads from family_context.md if available
@@ -159,8 +166,87 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
         except Exception as e:
             logger.error(f"Failed to fetch calendar {cal_label}: {e}")
 
+    # Merge in ICS feed events
+    all_events.extend(_fetch_ics_events(time_min, time_max))
+
     all_events.sort(key=lambda e: (not e["all_day"], e["start"]))
     return _dedup_events(all_events)
+
+
+def _fetch_ics_events(
+    time_min: datetime, time_max: datetime
+) -> list[dict]:
+    """Fetch events from ICS/webcal feeds (BYGA soccer, etc.).
+
+    Args:
+        time_min: Start of range (inclusive)
+        time_max: End of range (exclusive)
+
+    Returns:
+        List of event dicts matching the same format as Google Calendar events.
+    """
+    events = []
+    for url, label in ICS_FEEDS.items():
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            cal = icalendar.Calendar.from_ical(resp.content)
+
+            for component in cal.walk():
+                if component.name != "VEVENT":
+                    continue
+
+                summary = str(component.get("SUMMARY", "(No title)"))
+                # Skip cancelled events
+                if summary.upper().startswith("CANCELLED"):
+                    continue
+
+                dtstart = component.get("DTSTART")
+                dtend = component.get("DTEND")
+                if not dtstart:
+                    continue
+
+                start_dt = dtstart.dt
+                end_dt = dtend.dt if dtend else start_dt
+
+                # Handle date vs datetime
+                all_day = isinstance(start_dt, date) and not isinstance(
+                    start_dt, datetime
+                )
+                if all_day:
+                    # Compare as dates
+                    if start_dt >= time_max.date() or end_dt <= time_min.date():
+                        continue
+                    start_dt = datetime.combine(
+                        start_dt, datetime.min.time()
+                    )
+                    end_dt = datetime.combine(end_dt, datetime.min.time())
+                else:
+                    # Ensure timezone-aware for comparison
+                    if start_dt.tzinfo is None:
+                        start_dt = start_dt.replace(tzinfo=TIMEZONE)
+                    if end_dt.tzinfo is None:
+                        end_dt = end_dt.replace(tzinfo=TIMEZONE)
+                    if start_dt >= time_max or end_dt <= time_min:
+                        continue
+
+                location = str(component.get("LOCATION", ""))
+
+                events.append({
+                    "start": start_dt,
+                    "end": end_dt,
+                    "summary": summary,
+                    "location": location,
+                    "all_day": all_day,
+                    "calendar": label,
+                })
+
+            logger.info(f"ICS feed '{label}': fetched, "
+                        f"{len(events)} events in range")
+        except Exception as e:
+            logger.warning(f"ICS feed '{label}' failed: {e}")
+
+    return events
 
 
 def _dedup_events(events: list[dict]) -> list[dict]:
@@ -289,7 +375,7 @@ def get_upcoming_travel(service) -> list[dict]:
         travel_keywords = [
             "flight", "fly", "airport", "airline", "united",
             "hotel", "airbnb", "vrbo", "resort", "cabin",
-            "trip", "vacation", "travel",
+            "trip", "vacation", "travel", "disneyland", "disney",
         ]
 
         all_events = _fetch_events(service, start, end)
@@ -334,7 +420,10 @@ def get_upcoming_travel(service) -> list[dict]:
             max_tokens=500,
             messages=[{"role": "user", "content": f"""Extract upcoming travel from these sources. \
 Today is {today}. Only include future trips, not past ones. \
-Group related events into single trips (e.g., a flight + hotel = one trip).
+Group related events into single trips (e.g., a flight + hotel = one trip). \
+IMPORTANT: Only include trips that involve flights or leaving the San Francisco Bay Area \
+(e.g., a Disneyland trip, a flight to Denver). Exclude local Bay Area activities \
+like a nearby hotel stay or local rental car.
 
 {all_travel_text}
 
@@ -447,15 +536,38 @@ def get_weather() -> dict:
         return {}
 
 
-def get_gmail_action_items() -> list[str]:
-    """Scan personal Gmail for recent emails and extract action items.
+def _get_or_create_label(gmail, label_name: str) -> str | None:
+    """Get or create a Gmail label. Returns the label ID, or None on error."""
+    try:
+        results = gmail.users().labels().list(userId="me").execute()
+        for label in results.get("labels", []):
+            if label["name"] == label_name:
+                return label["id"]
+        # Label doesn't exist — create it
+        body = {
+            "name": label_name,
+            "labelListVisibility": "labelShow",
+            "messageListVisibility": "show",
+        }
+        created = gmail.users().labels().create(userId="me", body=body).execute()
+        logger.info(f"Created Gmail label '{label_name}' (id={created['id']})")
+        return created["id"]
+    except Exception as e:
+        logger.warning(f"Could not get/create Gmail label '{label_name}': {e}")
+        return None
+
+
+def get_gmail_action_items() -> dict[str, list[str]]:
+    """Scan personal Gmail for recent emails and extract tiered action items.
 
     Uses OAuth refresh token to access dennis.stefanitsis@gmail.com,
-    pulls the last 3 days of inbox messages, and uses Claude to
-    identify actionable items.
+    pulls recent messages + financial lookback, and uses Claude to
+    identify and tier actionable items. Emails labeled "Done" in
+    Gmail are excluded.
 
     Returns:
-        List of action item strings (max 5)
+        Dict with keys 'due_now', 'this_week', 'on_radar' —
+        each a list of action item strings. Returns empty dict on error.
     """
     refresh_token = os.environ.get("GMAIL_REFRESH_TOKEN")
     gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
@@ -480,15 +592,42 @@ def get_gmail_action_items() -> list[str]:
         )
         gmail = build("gmail", "v1", credentials=creds)
 
-        # Search for inbox messages from the last 3 days
+        # Ensure "Done" label exists (for filtering completed items)
+        done_label_id = _get_or_create_label(gmail, "Done")
+
+        # Exclude emails labeled "Done" — Dennis marks these when handled
+        done_filter = f" -label:Done" if done_label_id else ""
+
+        # Search 1: Recent emails (last 3 days, all categories)
         now = datetime.now(TIMEZONE)
         after_date = (now - timedelta(days=3)).strftime("%Y/%m/%d")
-        query = f"in:inbox after:{after_date}"
+        query = f"after:{after_date}{done_filter}"
 
         results = gmail.users().messages().list(
             userId="me", q=query, maxResults=30
         ).execute()
         messages = results.get("messages", [])
+
+        # Search 2: Financial/deadline emails (last 14 days) —
+        # bills often arrive early and sit in Promotions/Updates
+        bills_after = (now - timedelta(days=14)).strftime("%Y/%m/%d")
+        bills_query = (
+            f"after:{bills_after}{done_filter} "
+            f"(bill OR payment OR due OR invoice OR autopay OR past due "
+            f"OR statement OR tax OR penalty OR registration OR deadline "
+            f"OR renewal OR expires OR expiring)"
+        )
+        bills_results = gmail.users().messages().list(
+            userId="me", q=bills_query, maxResults=15
+        ).execute()
+        bills_messages = bills_results.get("messages", [])
+
+        # Dedupe by message ID
+        seen_ids = {m["id"] for m in messages}
+        for m in bills_messages:
+            if m["id"] not in seen_ids:
+                messages.append(m)
+                seen_ids.add(m["id"])
 
         if not messages:
             logger.info("No recent Gmail messages found")
@@ -496,7 +635,7 @@ def get_gmail_action_items() -> list[str]:
 
         # Fetch snippet + headers for each message
         email_summaries = []
-        for msg in messages[:30]:
+        for msg in messages[:40]:
             msg_data = gmail.users().messages().get(
                 userId="me", id=msg["id"], format="metadata",
                 metadataHeaders=["From", "Subject", "Date"],
@@ -517,42 +656,70 @@ def get_gmail_action_items() -> list[str]:
         logger.info(f"Fetched {len(email_summaries)} Gmail messages")
 
         # Use Claude to extract action items
+        today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
         prompt = f"""Review these personal emails from Dennis Stefanitsis's Gmail \
-(dennis.stefanitsis@gmail.com) from the last 3 days. This is his PERSONAL email, \
-not his business email.
+(dennis.stefanitsis@gmail.com). Today is {today}. This is his PERSONAL email, \
+not his business email (Glacier Point Insurance is separate — skip any GP business items).
 
 {emails_text}
 
-Extract up to 5 action items that Dennis needs to follow up on. Rules:
+Extract action items and sort them into tiers based on urgency. Rules:
 - Only include things that require Dennis to DO something (reply, sign, pay, \
 schedule, etc.)
-- Skip newsletters, promotions, notifications that don't need action
-- Skip anything that's clearly already been handled (replies sent, etc.)
-- Each action item should be one concise sentence
-- If there are no real action items, return "No action items"
-- Format: Return ONLY a JSON array of strings, nothing else
+- HIGHEST PRIORITY: upcoming bills, payments, auto-withdrawals, and due dates — \
+anything that could result in a late fee or penalty if missed (property taxes, \
+estimated taxes, utility bills, insurance premiums, subscriptions, tuition, etc.)
+- Flag emails from: IRS, FTB, Contra Costa County, Placer County, NJ Courts, \
+Chase mortgage, PURE Insurance, Fidelity "Action Needed", or any tax/CPA firm
+- Flag kids activity registration deadlines (LMYA, Springbrook, Eclipse, Luna, etc.)
+- Flag school forms/fees that need payment or signatures by a deadline
+- Skip: newsletters, promotions, payment confirmations for already-paid bills, \
+notifications that don't need action
+- Skip: PTA meeting invites — Dennis does not attend PTA meetings
+- Skip: Glacier Point / insurance business emails — handled separately
+- Skip: auto-pay confirmations where no action is needed (e.g., "thanks for your payment")
+- Each action item should be one concise sentence with due date/amount when available
 
-Example: ["Reply to Dr. Smith about appointment reschedule", \
-"Pay PG&E bill due March 25"]"""
+Return a JSON object with three arrays:
+- "due_now": items due within 3 days or overdue (max 3)
+- "this_week": items due within 7 days (max 3)
+- "on_radar": items 7-14 days out, just for awareness (max 2)
+
+If no items in a tier, use an empty array. If nothing at all, return \
+{{"due_now": [], "this_week": [], "on_radar": []}}
+Return ONLY the JSON object, nothing else.
+
+Example: {{"due_now": ["Chase credit card — $3,532 due tomorrow 04/14"], \
+"this_week": ["Eclipse tryout registration closes Friday — sign up Sophia"], \
+"on_radar": ["PG&E autopay ~$523 scheduled 04/03"]}}"""
 
         client = anthropic.Anthropic(api_key=anthropic_key)
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=300,
+            max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = _strip_code_fences(message.content[0].text)
 
-        # Parse the JSON array
-        if "No action items" in response_text:
-            return []
-        items = json.loads(response_text)
-        logger.info(f"Found {len(items)} action item(s)")
-        return items[:5]
+        # Parse the JSON object with tiered items
+        result = json.loads(response_text)
+        # Normalize — ensure all keys exist
+        tiered = {
+            "due_now": result.get("due_now", [])[:3],
+            "this_week": result.get("this_week", [])[:3],
+            "on_radar": result.get("on_radar", [])[:2],
+        }
+        total = sum(len(v) for v in tiered.values())
+        logger.info(
+            f"Action items: {len(tiered['due_now'])} due now, "
+            f"{len(tiered['this_week'])} this week, "
+            f"{len(tiered['on_radar'])} on radar ({total} total)"
+        )
+        return tiered
 
     except Exception as e:
         logger.error(f"Gmail action items failed: {e}")
-        return []
+        return {}
 
 
 def enrich_events(events: list[dict]) -> None:
@@ -748,7 +915,7 @@ def render_email(
     weather: dict,
     summary: str,
     special_dates: list[dict],
-    action_items: list[str],
+    action_items: dict[str, list[str]],
     travel: list[dict],
 ) -> str:
     """Render the HTML email using Jinja2 template.
@@ -759,7 +926,8 @@ def render_email(
         weather: Weather data dict
         summary: AI-generated day summary
         special_dates: Upcoming birthdays/anniversaries
-        action_items: AI-extracted email action items
+        action_items: Tiered action items dict with keys
+            'due_now', 'this_week', 'on_radar'
         travel: Upcoming trips
 
     Returns:
@@ -770,6 +938,11 @@ def render_email(
     env = Environment(loader=FileSystemLoader(str(template_dir)))
     template = env.get_template("email.html")
 
+    # Extract tiers (backwards-compatible with empty dict)
+    due_now = action_items.get("due_now", []) if action_items else []
+    this_week = action_items.get("this_week", []) if action_items else []
+    on_radar = action_items.get("on_radar", []) if action_items else []
+
     return template.render(
         date_header=today.strftime("%A, %B %-d"),
         year=today.strftime("%Y"),
@@ -779,7 +952,10 @@ def render_email(
         weather_grab=_get_weather_grab(weather),
         summary=summary,
         special_dates=special_dates,
-        action_items=action_items,
+        action_items_due_now=due_now,
+        action_items_this_week=this_week,
+        action_items_on_radar=on_radar,
+        has_action_items=bool(due_now or this_week or on_radar),
         travel=travel,
         location=LOCATION,
         format_time=format_event_time,
@@ -883,7 +1059,7 @@ def main() -> None:
     # Amy gets the family version without action items
     family_html = render_email(
         events, week_ahead, weather, summary,
-        special_dates, action_items=[], travel=travel,
+        special_dates, action_items={}, travel=travel,
     )
     send_email(dennis_html, family_html)
     logger.info("Done.")
