@@ -19,7 +19,7 @@ python itinerary.py
 3. Dennis shares Google Calendar with service account email (read-only)
 4. Amy shares her calendar too (optional) → add her calendar ID to `CALENDAR_IDS` in `itinerary.py`
 5. OpenWeatherMap → sign up → free API key → `OPENWEATHERMAP_API_KEY`
-6. SendGrid API key already exists from Glacier Point platform
+6. SendGrid API key — currently sharing Glacier Point's key (TODO: create a separate SendGrid account/key for this project)
 
 ## Files
 | File | Purpose |
