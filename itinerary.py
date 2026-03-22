@@ -375,6 +375,9 @@ def _fetch_ics_events(
 
                 location = str(component.get("LOCATION", ""))
 
+                # Detect person from ORIGINAL summary before cleaning
+                person = _detect_person(label, summary)
+
                 # Clean up verbose ICS summaries and locations
                 summary = _clean_ics_summary(summary)
                 location = _clean_location(location)
@@ -386,7 +389,7 @@ def _fetch_ics_events(
                     "location": location,
                     "all_day": all_day,
                     "calendar": label,
-                    "person": _detect_person(label, summary),
+                    "person": person,
                 })
 
             logger.info(f"ICS feed '{label}': fetched, "
@@ -609,23 +612,23 @@ def _get_weather_grab(weather: dict) -> str:
 
     # Rain gear
     if rain >= 50:
-        tips.append("raincoat and umbrella")
+        tips.append(f"{rain}% chance of rain — grab a raincoat and umbrella")
     elif rain >= 30:
-        tips.append("umbrella just in case")
+        tips.append(f"{rain}% rain chance — bring an umbrella just in case")
 
     # Cold gear — based on current temp and low
     if low < 45 or temp < 50:
-        tips.append("warm jacket")
+        tips.append(f"Low of {low}°F — warm jacket recommended")
     elif low < 55 or temp < 60:
-        tips.append("fleece or light jacket")
+        tips.append(f"Cooling to {low}°F — fleece or light jacket")
 
     # Sun protection
     if high >= 85:
-        tips.append("sunscreen")
+        tips.append(f"High of {high}°F — don't forget sunscreen")
 
     if not tips:
         return ""
-    return "Grab: " + ", ".join(tips) + "."
+    return ". ".join(tips) + "."
 
 
 def get_weather() -> dict:
