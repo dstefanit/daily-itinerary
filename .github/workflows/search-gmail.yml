@@ -1,10 +1,13 @@
-name: Search Gmail for Family Context
+name: Weekly Context Refresh
 
 on:
-  workflow_dispatch: # Manual trigger only
+  schedule:
+    # Every Sunday at 5:00 AM PT (12:00 PM UTC during PDT)
+    - cron: "0 12 * * 0"
+  workflow_dispatch: # Manual trigger
 
 jobs:
-  search:
+  refresh:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,9 +19,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Search personal Gmail
+      - name: Scan Gmail and update context
         env:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python search_gmail.py
+
+      - name: Commit updated context if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add family_context.md
+          git diff --cached --quiet || git commit -m "auto: refresh family context from Gmail"
+          git push

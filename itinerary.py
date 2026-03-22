@@ -108,7 +108,9 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                 if event.get("eventType") == "birthday":
                     continue
                 summary = event.get("summary", "(No title)")
-                if "birthday" in summary.lower() and "s birthday" in summary.lower():
+                summary_lower = summary.lower()
+                # Filter all birthday-like events from contacts
+                if "birthday" in summary_lower:
                     continue
 
                 start = event["start"]
@@ -234,6 +236,42 @@ def get_upcoming_special_dates() -> list[dict]:
     # Sort by soonest first
     upcoming.sort(key=lambda x: x["days_away"])
     return upcoming
+
+
+def _get_weather_grab(weather: dict) -> str:
+    """Generate a quick 'grab before you leave' note based on weather.
+
+    Returns a short string like 'Grab a raincoat' or empty string if
+    nothing special is needed.
+    """
+    if not weather:
+        return ""
+
+    tips = []
+    temp = weather.get("temp", 70)
+    high = weather.get("high", 70)
+    low = weather.get("low", 60)
+    rain = weather.get("rain_chance", 0)
+
+    # Rain gear
+    if rain >= 50:
+        tips.append("raincoat and umbrella")
+    elif rain >= 30:
+        tips.append("umbrella just in case")
+
+    # Cold gear — based on current temp and low
+    if low < 45 or temp < 50:
+        tips.append("warm jacket")
+    elif low < 55 or temp < 60:
+        tips.append("fleece or light jacket")
+
+    # Sun protection
+    if high >= 85:
+        tips.append("sunscreen")
+
+    if not tips:
+        return ""
+    return "Grab: " + ", ".join(tips) + "."
 
 
 def get_weather() -> dict:
@@ -539,6 +577,7 @@ def render_email(
         events=events,
         week_ahead=week_ahead,
         weather=weather,
+        weather_grab=_get_weather_grab(weather),
         summary=summary,
         special_dates=special_dates,
         action_items=action_items,

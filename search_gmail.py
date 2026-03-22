@@ -1,20 +1,27 @@
-"""Search personal Gmail for family context (doctors, sports, schools, etc.).
+"""Weekly Gmail scanner — finds family context and auto-updates family_context.md.
 
-Run via GitHub Actions workflow or locally with .env configured.
-Outputs structured findings to stdout for easy parsing.
+Searches personal Gmail for doctors, dentists, sports teams, schools, etc.
+Uses Claude to extract structured info and merge into existing context file.
+Runs weekly via GitHub Actions or manually.
 """
 import os
 import json
-import sys
-from datetime import datetime, timedelta
+import logging
+from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import anthropic
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-TIMEZONE = ZoneInfo("America/Los_Angeles")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
-# Searches to find family context — add new queries here as needed
+TIMEZONE = ZoneInfo("America/Los_Angeles")
+CONTEXT_FILE = Path(__file__).parent / "family_context.md"
+
+# Gmail search queries — add new ones here as needed
 SEARCHES = [
     "doctor appointment OR physician OR medical OR annual physical",
     "pediatrician OR pediatric OR kids doctor",
@@ -31,6 +38,8 @@ SEARCHES = [
     "Stanley middle school OR Lafayette elementary",
     "camp OR summer camp registration",
     "birthday party invitation",
+    "vet OR veterinarian OR pet appointment",
+    "pharmacy OR prescription OR refill",
 ]
 
 
@@ -74,6 +83,111 @@ def search(gmail, query: str, max_results: int = 5) -> list[dict]:
     return summaries
 
 
+def scan_gmail(gmail) -> dict[str, list[dict]]:
+    """Run all searches and collect results."""
+    all_results = {}
+    for query in SEARCHES:
+        results = search(gmail, query)
+        if results:
+            all_results[query] = results
+            logger.info(f"Found {len(results)} results for: {query}")
+        else:
+            logger.info(f"No results for: {query}")
+    return all_results
+
+
+def update_context(gmail_results: dict[str, list[dict]]) -> bool:
+    """Use Claude to merge Gmail findings into family_context.md.
+
+    Reads the existing context file, sends it + Gmail results to Claude,
+    and writes back the updated version. Only adds NEW information —
+    never removes existing entries.
+
+    Returns:
+        True if the file was updated, False if no changes needed.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.error("ANTHROPIC_API_KEY not set — cannot update context")
+        return False
+
+    existing_context = CONTEXT_FILE.read_text() if CONTEXT_FILE.exists() else ""
+
+    # Format Gmail results for the prompt
+    gmail_text = ""
+    for query, results in gmail_results.items():
+        gmail_text += f"\n### Search: {query}\n"
+        for r in results:
+            gmail_text += (
+                f"- From: {r['from']}\n"
+                f"  Subject: {r['subject']}\n"
+                f"  Date: {r['date']}\n"
+                f"  Preview: {r['snippet']}\n"
+            )
+
+    if not gmail_text.strip():
+        logger.info("No Gmail results to process")
+        return False
+
+    prompt = f"""You are updating a family context file used by a daily itinerary AI.
+The file helps the AI interpret calendar events accurately.
+
+Here is the CURRENT family_context.md:
+```
+{existing_context}
+```
+
+Here are RECENT Gmail search results that may contain new family context:
+{gmail_text}
+
+Your job:
+1. Extract any NEW, useful family context from the Gmail results:
+   - Doctor/dentist names, addresses, phone numbers
+   - Sports teams, coaches, practice schedules, locations
+   - Schools, teachers
+   - Recurring activities or classes
+   - Any other family logistics
+2. MERGE new findings into the existing file structure, preserving ALL existing content
+3. Do NOT remove or modify any existing entries unless correcting clearly outdated info
+4. Do NOT add promotional/spam content, one-time events, or transient info
+5. Keep the same markdown format and section structure
+6. If a section doesn't exist yet, create it in the appropriate place
+7. If nothing new was found, return the file EXACTLY as-is
+
+Return ONLY the complete updated family_context.md content, no explanation."""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        updated_content = message.content[0].text.strip()
+
+        # Remove markdown code fences if Claude wrapped it
+        if updated_content.startswith("```"):
+            lines = updated_content.split("\n")
+            # Remove first line (```markdown or ```) and last line (```)
+            if lines[-1].strip() == "```":
+                lines = lines[1:-1]
+            else:
+                lines = lines[1:]
+            updated_content = "\n".join(lines)
+
+        if updated_content == existing_context.strip():
+            logger.info("No new context found — file unchanged")
+            return False
+
+        CONTEXT_FILE.write_text(updated_content + "\n")
+        logger.info("family_context.md updated with new findings")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to update context: {e}")
+        return False
+
+
 def main():
     try:
         from dotenv import load_dotenv
@@ -81,29 +195,21 @@ def main():
     except ImportError:
         pass
 
+    logger.info("Scanning personal Gmail for family context...")
     gmail = build_gmail()
+    results = scan_gmail(gmail)
 
-    all_results = {}
-    for query in SEARCHES:
-        results = search(gmail, query)
-        if results:
-            all_results[query] = results
-            print(f"\n{'='*60}")
-            print(f"SEARCH: {query} ({len(results)} results)")
-            print(f"{'='*60}")
-            for r in results:
-                print(f"  From: {r['from']}")
-                print(f"  Subject: {r['subject']}")
-                print(f"  Date: {r['date']}")
-                print(f"  Preview: {r['snippet']}")
-                print()
+    logger.info(f"Found results in {len(results)} of {len(SEARCHES)} searches")
+
+    if results:
+        updated = update_context(results)
+        if updated:
+            logger.info("Context file updated — changes will take effect "
+                        "on next daily itinerary send")
         else:
-            print(f"[no results] {query}")
-
-    # Summary
-    print(f"\n{'='*60}")
-    print(f"SUMMARY: {len(all_results)} of {len(SEARCHES)} searches had results")
-    print(f"{'='*60}")
+            logger.info("No new context to add")
+    else:
+        logger.info("No Gmail results found across any search")
 
 
 if __name__ == "__main__":
