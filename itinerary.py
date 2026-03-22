@@ -122,7 +122,44 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
             logger.error(f"Failed to fetch calendar {cal_label}: {e}")
 
     all_events.sort(key=lambda e: (not e["all_day"], e["start"]))
-    return all_events
+    return _dedup_events(all_events)
+
+
+def _dedup_events(events: list[dict]) -> list[dict]:
+    """Merge duplicate events that appear on multiple calendars.
+
+    Two events are considered duplicates if they have the same summary
+    and start time. Merged events show all calendar sources.
+
+    Args:
+        events: Sorted list of event dicts
+
+    Returns:
+        Deduplicated list with calendar field as comma-joined string
+    """
+    seen: dict[str, dict] = {}  # key → event dict
+    deduped = []
+
+    for e in events:
+        # Build a key from summary + start time
+        start_str = e["start"].isoformat() if hasattr(e["start"], "isoformat") else str(e["start"])
+        key = f"{e['summary'].strip().lower()}|{start_str}"
+
+        if key in seen:
+            # Append this calendar to the existing entry
+            existing = seen[key]
+            if e["calendar"] not in existing["calendar"]:
+                existing["calendar"] += f", {e['calendar']}"
+            # Keep the more specific location if one is missing
+            if not existing["location"] and e.get("location"):
+                existing["location"] = e["location"]
+        else:
+            # Copy so we don't mutate the original
+            entry = dict(e)
+            seen[key] = entry
+            deduped.append(entry)
+
+    return deduped
 
 
 def get_today_events(service) -> list[dict]:
