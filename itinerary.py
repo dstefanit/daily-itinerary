@@ -320,13 +320,17 @@ Today's calendar events (tagged by source calendar — Dennis, Amy, or Family):
 {events_text}
 
 Write exactly 2-4 sentences summarizing this family's day. Rules:
-- Assign each event to the most likely family member based on the event name \
-and which calendar it's on. Dennis's calendar = Dennis's events. Amy's calendar = \
-Amy's events. Family calendar = shared/kids events.
+- CRITICAL: Use the EXACT times from the events above. Do not change, round, \
+or guess event times. If an event says 10:00 AM, say 10:00 AM — not 5:00 PM.
+- If a child's name (Anna or Sophia) appears in the event title, that event \
+is specifically for that child. Say "Sophia has..." or "Anna has..." — do not \
+say "the kids" unless both names appear or it's clearly a family event.
+- Dennis's calendar = Dennis's events. Amy's calendar = Amy's events. \
+Family calendar = shared or kids events.
 - Mention the weather only if it's noteworthy (very hot, cold, rainy). Don't \
 comment on normal pleasant weather.
 - If rain chance >30%: mention grabbing an umbrella or rain jacket.
-- If UV index ≥6 or high temp >85°F: mention sunscreen.
+- If UV index >=6 or high temp >85°F: mention sunscreen.
 - If low temp <50°F: mention layering up or grabbing a jacket.
 - If no events: say it's an open day and suggest something brief and fun.
 - Tone: warm, casual, like a note left on the kitchen counter. No greetings, \
@@ -358,11 +362,11 @@ def format_event_time(event: dict) -> str:
 
 
 def format_week_event_day(event: dict) -> str:
-    """Format an event's day name for the week-ahead section."""
+    """Format an event's day and date for the week-ahead section."""
     dt = event["start"]
     if hasattr(dt, "astimezone"):
         dt = dt.astimezone(TIMEZONE)
-    return dt.strftime("%A")
+    return dt.strftime("%a %-m/%-d")
 
 
 def render_email(
