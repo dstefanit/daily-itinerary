@@ -97,6 +97,7 @@
           <td style="vertical-align:top; padding-left:12px;">
             <p style="margin:0; font-size:15px; font-weight:500; color:#111827;">{{ event.summary }}</p>
             <p style="margin:2px 0 0; font-size:12px; color:#9ca3af;">{{ event.calendar }}{% if event.location %} &middot; {{ event.location }}{% endif %}</p>
+            {% if event.note %}<p style="margin:3px 0 0; font-size:12px; color:#6366f1; font-style:italic;">{{ event.note }}</p>{% endif %}
           </td>
         </tr>
         </table>
@@ -141,6 +142,7 @@
         <td style="vertical-align:top; padding-left:10px;">
           <p style="margin:0; font-size:14px; font-weight:500; color:#374151;">{{ event.summary }}</p>
           <p style="margin:1px 0 0; font-size:11px; color:#9ca3af;">{{ event.calendar }}{% if event.location %} &middot; {{ event.location }}{% endif %}</p>
+          {% if event.note %}<p style="margin:2px 0 0; font-size:11px; color:#6366f1; font-style:italic;">{{ event.note }}</p>{% endif %}
         </td>
       </tr>
       </table>

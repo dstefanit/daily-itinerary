@@ -438,6 +438,86 @@ Example: ["Reply to Dr. Smith about appointment reschedule", \
         return []
 
 
+def enrich_events(events: list[dict]) -> None:
+    """Add practical context notes to sparse calendar events.
+
+    Uses Claude to match each event against family_context.md and add
+    a short 'note' field with actionable info (address, what to bring,
+    pickup times, etc.). Modifies events in-place.
+
+    Args:
+        events: List of event dicts — each gets a 'note' key added.
+    """
+    if not events:
+        return
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return
+
+    # Build a numbered list of events for the prompt
+    event_lines = []
+    for i, e in enumerate(events):
+        if e["all_day"]:
+            time_str = "All Day"
+        else:
+            start = e["start"]
+            if hasattr(start, "astimezone"):
+                start = start.astimezone(TIMEZONE)
+            time_str = start.strftime("%-I:%M %p")
+        loc = f" at {e['location']}" if e.get("location") else ""
+        event_lines.append(f"{i}: {time_str} — {e['summary']}{loc}")
+
+    events_text = "\n".join(event_lines)
+
+    prompt = f"""You are enriching calendar events for a family daily itinerary email.
+
+Here is the family context file with known details about people, activities, \
+locations, doctors, sports teams, etc.:
+
+{FAMILY_CONTEXT}
+
+Here are today's calendar events (index: time — title):
+{events_text}
+
+For EACH event, generate a short practical note (max 15 words) with useful \
+context from the family file. Examples:
+- "Springbrook Pool, Lafayette. Bring suit, goggles, cap."
+- "Milcovich Dental, 1855 San Miguel Dr, Walnut Creek. (925) 944-5151"
+- "Luna Gymnastics, 594 Moraga Rd, Moraga. Coach Wayne."
+- "Pickup from Lafayette Elementary at 1:20 PM"
+
+Rules:
+- ONLY add a note if the family context has relevant info for that event
+- Focus on: location/address, what to bring, contact info, pickup logistics
+- If the event already has a location AND no other useful context exists, \
+return null for that event
+- Keep notes short and practical — this goes under the event in the email
+- Return ONLY a JSON object mapping event index (as string) to note string \
+or null. Example: {{"0": "Springbrook Pool. Bring suit, goggles, cap.", "1": null}}"""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = message.content[0].text.strip()
+        notes = json.loads(response_text)
+
+        for idx_str, note in notes.items():
+            idx = int(idx_str)
+            if 0 <= idx < len(events) and note:
+                events[idx]["note"] = note
+
+        enriched = sum(1 for e in events if e.get("note"))
+        logger.info(f"Enriched {enriched} of {len(events)} events with context")
+
+    except Exception as e:
+        logger.error(f"Event enrichment failed: {e}")
+
+
 def _format_events_for_prompt(events: list[dict]) -> str:
     """Format today's events as text lines for the AI prompt."""
     lines = []
@@ -645,6 +725,10 @@ def main() -> None:
     logger.info("Fetching week-ahead events...")
     week_ahead = get_week_ahead_events(service) if service else []
     logger.info(f"Found {len(week_ahead)} event(s) rest of week")
+
+    logger.info("Enriching events with family context...")
+    enrich_events(events)
+    enrich_events(week_ahead)
 
     logger.info("Checking upcoming birthdays/anniversaries...")
     special_dates = get_upcoming_special_dates()
