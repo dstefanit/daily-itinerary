@@ -37,12 +37,20 @@ CALENDARS = {
     "family05389224298174643941@group.calendar.google.com": "Family",
 }
 
-# Family context for the AI summary
-FAMILY_CONTEXT = (
-    "The Stefanitsis family: Dennis (dad), Amy (mom), "
-    "Anna (12 year old daughter), Sophia (10 year old daughter). "
-    "They live in Lafayette, CA."
-)
+# Family context for the AI summary — loads from family_context.md if available
+def _load_family_context() -> str:
+    """Load family context from markdown file, fall back to default."""
+    context_path = Path(__file__).parent / "family_context.md"
+    if context_path.exists():
+        return context_path.read_text()
+    return (
+        "The Stefanitsis family: Dennis (dad), Amy (mom), "
+        "Anna (12 year old daughter), Sophia (10 year old daughter). "
+        "They live in Lafayette, CA."
+    )
+
+
+FAMILY_CONTEXT = _load_family_context()
 
 # Birthdays and anniversaries — (month, day, label, year_born_or_married)
 # year is used to calculate age/years married
