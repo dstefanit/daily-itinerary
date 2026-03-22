@@ -241,32 +241,43 @@ def get_weather() -> dict:
         return {}
 
     try:
-        url = "https://api.openweathermap.org/data/3.0/onecall"
-        params = {
-            "lat": LAT,
-            "lon": LON,
-            "appid": api_key,
-            "units": "imperial",
-            "exclude": "minutely,alerts",
+        # Current weather
+        current_url = "https://api.openweathermap.org/data/2.5/weather"
+        current_params = {
+            "lat": LAT, "lon": LON,
+            "appid": api_key, "units": "imperial",
         }
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+        current_resp = requests.get(current_url, params=current_params, timeout=10)
+        current_resp.raise_for_status()
+        current_data = current_resp.json()
 
-        current = data["current"]
-        today_forecast = data["daily"][0]
+        # Daily forecast (for high/low)
+        forecast_url = "https://api.openweathermap.org/data/2.5/forecast"
+        forecast_params = {
+            "lat": LAT, "lon": LON,
+            "appid": api_key, "units": "imperial",
+            "cnt": 8,  # Next 24 hours in 3-hour blocks
+        }
+        forecast_resp = requests.get(forecast_url, params=forecast_params, timeout=10)
+        forecast_resp.raise_for_status()
+        forecast_data = forecast_resp.json()
 
-        rain_chance = round(today_forecast.get("pop", 0) * 100)
-        uv_index = current.get("uvi", 0)
+        # Calculate high/low from forecast blocks
+        temps = [b["main"]["temp"] for b in forecast_data["list"]]
+        temps.append(current_data["main"]["temp"])
+        rain_chance = max(
+            (round(b.get("pop", 0) * 100) for b in forecast_data["list"]),
+            default=0,
+        )
 
         return {
-            "temp": round(current["temp"]),
-            "high": round(today_forecast["temp"]["max"]),
-            "low": round(today_forecast["temp"]["min"]),
-            "description": current["weather"][0]["description"].title(),
-            "icon": current["weather"][0]["icon"],
+            "temp": round(current_data["main"]["temp"]),
+            "high": round(max(temps)),
+            "low": round(min(temps)),
+            "description": current_data["weather"][0]["description"].title(),
+            "icon": current_data["weather"][0]["icon"],
             "rain_chance": rain_chance,
-            "uv_index": round(uv_index),
+            "uv_index": 0,  # Not available on 2.5 free tier
         }
     except Exception as e:
         logger.error(f"Weather API failed: {e}")
@@ -449,7 +460,7 @@ Family calendar = shared or kids events.
 - Mention the weather only if it's noteworthy (very hot, cold, rainy). Don't \
 comment on normal pleasant weather.
 - If rain chance >30%: mention grabbing an umbrella or rain jacket.
-- If UV index >=6 or high temp >85°F: mention sunscreen.
+- If high temp >85°F: mention sunscreen.
 - If low temp <50°F: mention layering up or grabbing a jacket.
 - If no events: say it's an open day and suggest something brief and fun.
 - Tone: warm, casual, like a note left on the kitchen counter. No greetings, \
