@@ -52,6 +52,24 @@ def _load_family_context() -> str:
 
 FAMILY_CONTEXT = _load_family_context()
 
+
+def _strip_code_fences(text: str) -> str:
+    """Strip markdown code fences from Claude's response.
+
+    Claude sometimes wraps JSON in ```json ... ``` blocks.
+    This extracts the content inside the fences.
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove first line (```json or ```) and last line (```)
+        if lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        text = "\n".join(lines).strip()
+    return text
+
 # Birthdays and anniversaries — (month, day, label, year_born_or_married)
 # year is used to calculate age/years married
 SPECIAL_DATES = [
@@ -424,7 +442,7 @@ Example: ["Reply to Dr. Smith about appointment reschedule", \
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )
-        response_text = message.content[0].text.strip()
+        response_text = _strip_code_fences(message.content[0].text)
 
         # Parse the JSON array
         if "No action items" in response_text:
@@ -503,7 +521,7 @@ or null. Example: {{"0": "Springbrook Pool. Bring suit, goggles, cap.", "1": nul
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
-        response_text = message.content[0].text.strip()
+        response_text = _strip_code_fences(message.content[0].text)
         notes = json.loads(response_text)
 
         for idx_str, note in notes.items():
