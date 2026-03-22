@@ -119,26 +119,24 @@ def _build_calendar_service():
 
 
 def _detect_person(calendar: str, summary: str) -> str:
-    """Detect which family member an event belongs to.
+    """Detect which family member an event belongs to (fallback).
 
-    Uses calendar name first, then falls back to keyword matching
-    in the event summary. Returns 'anna', 'sophia', 'dennis', 'amy',
-    or '' if no match.
+    Kid-specific keywords in the summary ALWAYS take priority over
+    parent calendar names, because parents put kids' events on their
+    own calendars all the time.
+
+    Returns 'anna', 'sophia', 'dennis', 'amy', or '' if no match.
     """
     cal = calendar.lower()
     summ = summary.lower()
 
-    # Calendar name is the strongest signal
-    if "anna" in cal:
+    # 1) Kid-dedicated calendars are definitive
+    if "anna" in cal and "sophia" not in cal:
         return "anna"
-    if "sophia" in cal:
+    if "sophia" in cal and "anna" not in cal:
         return "sophia"
-    if "dennis" in cal:
-        return "dennis"
-    if "amy" in cal:
-        return "amy"
 
-    # Keyword fallback from event summary
+    # 2) Kid keywords in summary — ALWAYS checked before parent calendars
     # Anna: LAMO soccer, Coach Luis, Stanley, 6th grade volleyball, Myrtle
     anna_keywords = [
         "lamo", "luis", "lamorinda soccer", "stanley",
@@ -156,9 +154,17 @@ def _detect_person(calendar: str, summary: str) -> str:
     if any(k in summ for k in sophia_keywords):
         return "sophia"
 
-    # Check for names directly in summary
+    # Check for kid names in summary
     if "anna" in summ:
         return "anna"
+
+    # 3) Parent calendar names — only if no kid keyword matched
+    if "dennis" in cal:
+        return "dennis"
+    if "amy" in cal:
+        return "amy"
+
+    # 4) Parent names in summary
     if "dennis" in summ:
         return "dennis"
     if "amy" in summ:
@@ -961,10 +967,11 @@ Example: {{"0": {{"note": "Bring suit, goggles, cap.", "person": "sophia"}}, \
                     events[idx]["note"] = value
             elif isinstance(value, dict):
                 note = value.get("note")
-                person = value.get("person", "")
+                person = value.get("person")
                 if note:
                     events[idx]["note"] = note
-                if person:
+                # AI person assignment always overrides the fallback
+                if person is not None:
                     events[idx]["person"] = person
 
         enriched = sum(1 for e in events if e.get("note"))
