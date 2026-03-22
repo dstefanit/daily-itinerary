@@ -42,6 +42,19 @@ CALENDARS = {
 ICS_FEEDS = {
     "https://lamorindasc.byga.net/cal/dnphjqyNfD.ics": "Anna Soccer",
     "https://eastbayeclipse.byga.net/cal/aoXhNbLkFA.ics": "Sophia Soccer",
+    (
+        "https://lmyasports.leagueapps.com/ajax/loadSchedule"
+        "?origin=site&scope=user&publishedOnly=0"
+        "&itemType=games_events&userScope=me_kids"
+        "&startsAfterDate=01/01/2026&startsBeforeDate=12/31/2026"
+        "&programId=&iCalExport=true&userId=13321030"
+    ): "Volleyball",
+    (
+        "https://www.gomotionapp.com/rest/ics/system/3/General.ics"
+        "?key=TvJ8yGo6%2FRO5FqvDtM2nEQ%3D%3D&enabled=true"
+        "&startDate=1769932800000&endDate=1803888000000"
+        "&roster_group_id=130962"
+    ): "Sophia Swim",
 }
 
 # Family context for the AI summary — loads from family_context.md if available
@@ -126,15 +139,19 @@ def _detect_person(calendar: str, summary: str) -> str:
         return "amy"
 
     # Keyword fallback from event summary
-    # Anna: LAMO soccer, Coach Luis, Stanley Middle School
-    anna_keywords = ["lamo", "luis", "lamorinda soccer", "stanley"]
+    # Anna: LAMO soccer, Coach Luis, Stanley, 6th grade volleyball, Myrtle
+    anna_keywords = [
+        "lamo", "luis", "lamorinda soccer", "stanley",
+        "6th grade", "myrtle",
+    ]
     if any(k in summ for k in anna_keywords):
         return "anna"
 
-    # Sophia: swim, Springbrook, Eclipse soccer, Luna gymnastics
+    # Sophia: swim, Springbrook, Eclipse soccer, Luna gymnastics,
+    # 4th grade volleyball, Manhattan team
     sophia_keywords = [
         "swim", "springbrook", "eclipse", "luna", "gymnastics",
-        "play sophia", "sophia",
+        "play sophia", "sophia", "4th grade", "manhattan",
     ]
     if any(k in summ for k in sophia_keywords):
         return "sophia"
@@ -236,6 +253,14 @@ def _clean_ics_summary(summary: str) -> str:
     # "Practice: TEAM (LOCATION)" → "Soccer Practice"
     if s.lower().startswith("practice:"):
         return "Soccer Practice"
+
+    # "4th grade Volleyball Practice (4th Grade)" → "Volleyball Practice"
+    # "6th grade Volleyball Game (6th Grade)" → "Volleyball Game"
+    vball_match = re.match(
+        r"\d+(?:st|nd|rd|th)\s+grade\s+(Volleyball\s+\w+)", s, re.IGNORECASE
+    )
+    if vball_match:
+        return vball_match.group(1).strip()
 
     # "TEAM at OPPONENT" → "Game @ OPPONENT"
     at_match = re.match(
@@ -881,21 +906,38 @@ locations, doctors, sports teams, etc.:
 Here are today's calendar events (index: time — title):
 {events_text}
 
-For EACH event, generate a short practical note (max 15 words) with useful \
-context from the family file. Examples:
+For EACH event, do two things:
+1. Generate a short practical note (max 15 words) with useful context from \
+the family file. Examples:
 - "Springbrook Pool, Lafayette. Bring suit, goggles, cap."
 - "Milcovich Dental, 1855 San Miguel Dr, Walnut Creek. (925) 944-5151"
 - "Luna Gymnastics, 594 Moraga Rd, Moraga. Coach Wayne."
 - "Pickup from Lafayette Elementary at 1:20 PM"
 
+2. Determine which family member this event is primarily for. Use the family \
+context to figure this out. Return one of: "anna", "sophia", "dennis", "amy", \
+or "" if it's a shared/family event.
+Examples:
+- Luna Gymnastics → "sophia" (Sophia does gymnastics at Luna)
+- Springbrook swim → "sophia" (Sophia's swim team)
+- LAMO soccer / Coach Luis → "anna" (Anna is on LAMO, Luis is her coach)
+- Eclipse soccer → "sophia" (Sophia is on Eclipse)
+- 4th grade volleyball → "sophia" (Sophia is in 4th/5th grade)
+- 6th grade volleyball → "anna" (Anna is in 6th/7th grade)
+- Dentist / orthodontist → check if a kid's name is mentioned
+- Dennis's work events → "dennis"
+- Amy's school events → "amy"
+
 Rules:
 - ONLY add a note if the family context has relevant info for that event
 - Focus on: location/address, what to bring, contact info, pickup logistics
 - If the event already has a location AND no other useful context exists, \
-return null for that event
+set note to null
 - Keep notes short and practical — this goes under the event in the email
-- Return ONLY a JSON object mapping event index (as string) to note string \
-or null. Example: {{"0": "Springbrook Pool. Bring suit, goggles, cap.", "1": null}}"""
+- Return ONLY a JSON object mapping event index (as string) to an object \
+with "note" (string or null) and "person" (string). \
+Example: {{"0": {{"note": "Bring suit, goggles, cap.", "person": "sophia"}}, \
+"1": {{"note": null, "person": ""}}}}"""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -905,15 +947,32 @@ or null. Example: {{"0": "Springbrook Pool. Bring suit, goggles, cap.", "1": nul
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = _strip_code_fences(message.content[0].text)
-        notes = json.loads(response_text)
+        results = json.loads(response_text)
 
-        for idx_str, note in notes.items():
+        for idx_str, value in results.items():
             idx = int(idx_str)
-            if 0 <= idx < len(events) and note:
-                events[idx]["note"] = note
+            if 0 > idx or idx >= len(events):
+                continue
+
+            # Support both old format (string) and new format (object)
+            if isinstance(value, str):
+                # Old format: just a note string
+                if value:
+                    events[idx]["note"] = value
+            elif isinstance(value, dict):
+                note = value.get("note")
+                person = value.get("person", "")
+                if note:
+                    events[idx]["note"] = note
+                if person:
+                    events[idx]["person"] = person
 
         enriched = sum(1 for e in events if e.get("note"))
-        logger.info(f"Enriched {enriched} of {len(events)} events with context")
+        assigned = sum(1 for e in events if e.get("person"))
+        logger.info(
+            f"Enriched {enriched} of {len(events)} events with context, "
+            f"{assigned} with person tags"
+        )
 
     except Exception as e:
         logger.error(f"Event enrichment failed: {e}")
