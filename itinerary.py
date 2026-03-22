@@ -567,7 +567,7 @@ def get_upcoming_travel(service) -> list[dict]:
         client = anthropic.Anthropic(api_key=api_key)
         today = datetime.now(TIMEZONE).strftime("%Y-%m-%d")
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             messages=[{"role": "user", "content": f"""Extract upcoming travel from these sources. \
 Today is {today}. Only include future trips, not past ones. \
@@ -846,7 +846,7 @@ Example: {{"due_now": ["Chase credit card — $3,532 due tomorrow 04/14"], \
 
         client = anthropic.Anthropic(api_key=anthropic_key)
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -915,44 +915,42 @@ locations, doctors, sports teams, etc.:
 Here are today's calendar events (index: time — title):
 {events_text}
 
-For EACH event, do two things:
-1. Generate a short practical note (max 15 words) with useful context from \
-the family file. Examples:
-- "Springbrook Pool, Lafayette. Bring suit, goggles, cap."
-- "Milcovich Dental, 1855 San Miguel Dr, Walnut Creek. (925) 944-5151"
-- "Luna Gymnastics, 594 Moraga Rd, Moraga. Coach Wayne."
-- "Pickup from Lafayette Elementary at 1:20 PM"
+For EACH event, provide three things:
 
-2. Determine which family member this event is primarily for. Use the family \
-context to figure this out. Return one of: "anna", "sophia", "dennis", "amy", \
-or "" if it's a shared/family event.
-Examples:
-- Luna Gymnastics → "sophia" (Sophia does gymnastics at Luna)
-- Springbrook swim → "sophia" (Sophia's swim team)
-- LAMO soccer / Coach Luis → "anna" (Anna is on LAMO, Luis is her coach)
-- Eclipse soccer → "sophia" (Sophia is on Eclipse)
-- 4th grade volleyball → "sophia" (Sophia is in 4th/5th grade)
-- 6th grade volleyball → "anna" (Anna is in 6th/7th grade)
-- Dentist / orthodontist → check if a kid's name is mentioned
-- Dennis's work events → "dennis"
-- Amy's school events → "amy"
+1. **location**: If the event is MISSING a location (shown as "at" in the list \
+above), use the family context to fill it in. Use a short venue name + city, \
+e.g., "Springbrook Pool, Lafayette" or "Luna Gymnastics, Moraga". \
+If the event already has a location, return null. If you genuinely don't know \
+the location, return null.
 
-Rules:
-- ONLY add a note if the family context has relevant info for that event
-- Focus on: location/address, what to bring, contact info, pickup logistics
-- If the event already has a location AND no other useful context exists, \
-set note to null
-- Keep notes short and practical — this goes under the event in the email
-- Return ONLY a JSON object mapping event index (as string) to an object \
-with "note" (string or null) and "person" (string). \
-Example: {{"0": {{"note": "Bring suit, goggles, cap.", "person": "sophia"}}, \
-"1": {{"note": null, "person": ""}}}}"""
+2. **note**: A short practical tip (max 12 words) — what to bring, contact info, \
+pickup details. Do NOT repeat the location in the note. Examples:
+- "Bring suit, goggles, cap."
+- "(925) 944-5151. Dr. Milcovich."
+- "Coach Wayne. Super Stars class."
+- "Pickup at 1:20 PM"
+Set to null if no useful tip beyond the location.
+
+3. **person**: Which family member this event is for. Return one of: \
+"anna", "sophia", "dennis", "amy", or "" if shared/family.
+Key mappings from context:
+- Luna/gymnastics → "sophia"
+- Swim/Springbrook → "sophia"
+- LAMO/Luis → "anna" (Luis is Anna's LAMO soccer coach)
+- Eclipse → "sophia"
+- 4th grade volleyball → "sophia"
+- 6th grade volleyball → "anna"
+
+Return ONLY a JSON object mapping event index (as string) to an object \
+with "location" (string or null), "note" (string or null), and "person" (string).
+Example: {{"0": {{"location": "Springbrook Pool, Lafayette", "note": "Bring suit, goggles, cap.", "person": "sophia"}}, \
+"1": {{"location": null, "note": null, "person": "dennis"}}}}"""
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=500,
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = _strip_code_fences(message.content[0].text)
@@ -969,19 +967,26 @@ Example: {{"0": {{"note": "Bring suit, goggles, cap.", "person": "sophia"}}, \
                 if value:
                     events[idx]["note"] = value
             elif isinstance(value, dict):
+                # AI-provided location fills gaps from calendar
+                ai_loc = value.get("location")
+                if ai_loc and not events[idx].get("location"):
+                    events[idx]["location"] = ai_loc
+
                 note = value.get("note")
-                person = value.get("person")
                 if note:
                     events[idx]["note"] = note
+
                 # AI person assignment always overrides the fallback
+                person = value.get("person")
                 if person is not None:
                     events[idx]["person"] = person
 
         enriched = sum(1 for e in events if e.get("note"))
+        located = sum(1 for e in events if e.get("location"))
         assigned = sum(1 for e in events if e.get("person"))
         logger.info(
-            f"Enriched {enriched} of {len(events)} events with context, "
-            f"{assigned} with person tags"
+            f"Enriched {enriched}/{len(events)} notes, "
+            f"{located} with locations, {assigned} with person tags"
         )
 
     except Exception as e:
@@ -1065,7 +1070,7 @@ no sign-offs, no emojis, no bullet points. Just flowing sentences."""
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model="claude-sonnet-4-5-20250929",
             max_tokens=250,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1103,6 +1108,7 @@ def render_email(
     special_dates: list[dict],
     action_items: dict[str, list[str]],
     travel: list[dict],
+    evening_mode: bool = False,
 ) -> str:
     """Render the HTML email using Jinja2 template.
 
@@ -1129,8 +1135,24 @@ def render_email(
     this_week = action_items.get("this_week", []) if action_items else []
     on_radar = action_items.get("on_radar", []) if action_items else []
 
+    # Evening mode shows tomorrow's date and different headers
+    if evening_mode:
+        tomorrow = today + timedelta(days=1)
+        date_header = f"Tomorrow — {tomorrow.strftime('%A, %B %-d')}"
+        title = "Evening Preview"
+        schedule_label = "Tomorrow's Schedule"
+        briefing_label = "Prep for Tomorrow"
+    else:
+        date_header = today.strftime("%A, %B %-d")
+        title = "Stefanitsis Family Itinerary"
+        schedule_label = "Today's Schedule"
+        briefing_label = "Today's Briefing"
+
     return template.render(
-        date_header=today.strftime("%A, %B %-d"),
+        date_header=date_header,
+        title=title,
+        schedule_label=schedule_label,
+        briefing_label=briefing_label,
         year=today.strftime("%Y"),
         events=events,
         week_ahead=week_ahead,
@@ -1150,7 +1172,9 @@ def render_email(
 
 
 def send_email(
-    dennis_html: str, family_html: str
+    dennis_html: str,
+    family_html: str,
+    subject_override: str | None = None,
 ) -> None:
     """Send the itinerary email via SendGrid.
 
@@ -1163,7 +1187,7 @@ def send_email(
         return
 
     today = datetime.now(TIMEZONE)
-    subject = (
+    subject = subject_override or (
         f"Stefanitsis Family Itinerary — {today.strftime('%A, %B %-d')}"
     )
 
@@ -1190,66 +1214,174 @@ def send_email(
             logger.error(f"Failed to send to {recipient}: {e}")
 
 
-def main() -> None:
-    """Pull calendar + weather, generate AI summary, render and send."""
+def _get_tomorrow_events(service) -> list[dict]:
+    """Fetch tomorrow's calendar events."""
+    now = datetime.now(TIMEZONE)
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    end = tomorrow + timedelta(days=1)
+    return _fetch_events(service, tomorrow, end)
+
+
+def generate_evening_summary(
+    tomorrow_events: list[dict], weather: dict
+) -> str:
+    """Generate an evening briefing summary focused on tomorrow prep.
+
+    Args:
+        tomorrow_events: Tomorrow's calendar events
+        weather: Weather data dict (tomorrow's forecast)
+
+    Returns:
+        AI-generated evening summary (plain text, 2-4 sentences)
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return ""
+
+    tomorrow = datetime.now(TIMEZONE) + timedelta(days=1)
+    events_text = _format_events_for_prompt(tomorrow_events)
+
+    weather_text = ""
+    if weather:
+        weather_text = (
+            f"Tomorrow's weather: {weather['description']}, "
+            f"high {weather['high']}°, low {weather['low']}°. "
+            f"Rain chance: {weather['rain_chance']}%."
+        )
+
+    prompt = f"""{FAMILY_CONTEXT}
+
+Tomorrow is {tomorrow.strftime('%A, %B %-d, %Y')}.
+{weather_text}
+
+Tomorrow's calendar events:
+{events_text}
+
+Write 2-4 sentences previewing tomorrow for the family. Focus on:
+- What to prep tonight (pack bags, lay out clothes, set alarms)
+- Early morning logistics if applicable
+- Weather-related prep (rain gear by the door, sunscreen in backpacks)
+- Any conflicts or tight transitions between events
+
+Tone: warm, practical, like a note on the kitchen counter. \
+No greetings, sign-offs, emojis, or bullet points. Flowing sentences."""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=250,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception as e:
+        logger.error(f"Evening summary failed: {e}")
+        return ""
+
+
+def main(mode: str = "morning") -> None:
+    """Pull calendar + weather, generate AI summary, render and send.
+
+    Args:
+        mode: 'morning' for day-of briefing, 'evening' for tomorrow preview.
+    """
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
 
+    logger.info(f"Running {mode} briefing...")
     service = _build_calendar_service()
 
-    logger.info("Fetching today's events...")
-    events = get_today_events(service) if service else []
-    logger.info(f"Found {len(events)} event(s) today")
+    if mode == "evening":
+        # Evening briefing — focused on tomorrow
+        logger.info("Fetching tomorrow's events...")
+        tomorrow_events = _get_tomorrow_events(service) if service else []
+        logger.info(f"Found {len(tomorrow_events)} event(s) tomorrow")
 
-    logger.info("Fetching week-ahead events...")
-    week_ahead = get_week_ahead_events(service) if service else []
-    logger.info(f"Found {len(week_ahead)} event(s) rest of week")
+        logger.info("Enriching events with family context...")
+        enrich_events(tomorrow_events)
 
-    logger.info("Enriching events with family context...")
-    enrich_events(events)
-    enrich_events(week_ahead)
+        logger.info("Fetching weather...")
+        weather = get_weather()
 
-    logger.info("Checking upcoming birthdays/anniversaries...")
-    special_dates = get_upcoming_special_dates()
-    if special_dates:
-        logger.info(
-            f"Upcoming: {', '.join(s['label'] for s in special_dates)}"
+        logger.info("Generating evening summary...")
+        summary = generate_evening_summary(tomorrow_events, weather)
+
+        # Evening email: tomorrow's events as "today", no week-ahead
+        dennis_html = render_email(
+            tomorrow_events, week_ahead=[], weather=weather,
+            summary=summary, special_dates=[],
+            action_items={}, travel=[],
+            evening_mode=True,
         )
+        family_html = dennis_html  # Same version for both
 
-    logger.info("Fetching weather...")
-    weather = get_weather()
-    if weather:
-        logger.info(
-            f"{weather['description']} — {weather['temp']}°F "
-            f"(H: {weather['high']}° / L: {weather['low']}°, "
-            f"rain: {weather['rain_chance']}%, UV: {weather['uv_index']})"
+        today = datetime.now(TIMEZONE)
+        tomorrow = today + timedelta(days=1)
+        subject = (
+            f"Tomorrow's Preview — {tomorrow.strftime('%A, %B %-d')}"
         )
+        send_email(dennis_html, family_html, subject_override=subject)
 
-    logger.info("Checking upcoming travel...")
-    travel = get_upcoming_travel(service)
+    else:
+        # Morning briefing — existing behavior
+        logger.info("Fetching today's events...")
+        events = get_today_events(service) if service else []
+        logger.info(f"Found {len(events)} event(s) today")
 
-    logger.info("Scanning personal Gmail for action items...")
-    action_items = get_gmail_action_items()
+        logger.info("Fetching week-ahead events...")
+        week_ahead = get_week_ahead_events(service) if service else []
+        logger.info(f"Found {len(week_ahead)} event(s) rest of week")
 
-    logger.info("Generating AI summary...")
-    summary = generate_summary(events, weather)
+        logger.info("Enriching events with family context...")
+        enrich_events(events)
+        enrich_events(week_ahead)
 
-    # Dennis gets the full version with action items
-    dennis_html = render_email(
-        events, week_ahead, weather, summary,
-        special_dates, action_items, travel,
-    )
-    # Amy gets the family version without action items
-    family_html = render_email(
-        events, week_ahead, weather, summary,
-        special_dates, action_items={}, travel=travel,
-    )
-    send_email(dennis_html, family_html)
+        logger.info("Checking upcoming birthdays/anniversaries...")
+        special_dates = get_upcoming_special_dates()
+        if special_dates:
+            logger.info(
+                f"Upcoming: {', '.join(s['label'] for s in special_dates)}"
+            )
+
+        logger.info("Fetching weather...")
+        weather = get_weather()
+        if weather:
+            logger.info(
+                f"{weather['description']} — {weather['temp']}°F "
+                f"(H: {weather['high']}° / L: {weather['low']}°, "
+                f"rain: {weather['rain_chance']}%, UV: {weather['uv_index']})"
+            )
+
+        logger.info("Checking upcoming travel...")
+        travel = get_upcoming_travel(service)
+
+        logger.info("Scanning personal Gmail for action items...")
+        action_items = get_gmail_action_items()
+
+        logger.info("Generating AI summary...")
+        summary = generate_summary(events, weather)
+
+        # Dennis gets the full version with action items
+        dennis_html = render_email(
+            events, week_ahead, weather, summary,
+            special_dates, action_items, travel,
+        )
+        # Amy gets the family version without action items
+        family_html = render_email(
+            events, week_ahead, weather, summary,
+            special_dates, action_items={}, travel=travel,
+        )
+        send_email(dennis_html, family_html)
+
     logger.info("Done.")
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    run_mode = sys.argv[1] if len(sys.argv) > 1 else "morning"
+    main(mode=run_mode)

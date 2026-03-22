@@ -2,10 +2,20 @@ name: Daily Itinerary
 
 on:
   schedule:
-    # 6:30am PT = 1:30pm UTC (during PDT)
-    # Adjust to 2:30pm UTC during PST if needed
-    - cron: "30 13 * * *"
-  workflow_dispatch: # Manual trigger for testing
+    # Morning briefing: 6:00 AM PT = 1:00 PM UTC (during PDT)
+    - cron: "0 13 * * *"
+    # Evening briefing: 5:00 PM PT = midnight UTC (during PDT)
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Briefing mode"
+        required: false
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - evening
 
 jobs:
   send:
@@ -20,6 +30,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Determine mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_MODE: ${{ inputs.mode }}
+          CRON_SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "mode=$INPUT_MODE" >> "$GITHUB_OUTPUT"
+          elif [ "$CRON_SCHEDULE" = "0 0 * * *" ]; then
+            echo "mode=evening" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=morning" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Send itinerary
         env:
           GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
@@ -29,4 +54,5 @@ jobs:
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
-        run: python itinerary.py
+          BRIEFING_MODE: ${{ steps.mode.outputs.mode }}
+        run: python itinerary.py "$BRIEFING_MODE"
