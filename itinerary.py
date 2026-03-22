@@ -159,7 +159,7 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                     "start": start_dt,
                     "end": end_dt,
                     "summary": summary,
-                    "location": event.get("location", ""),
+                    "location": _clean_location(event.get("location", "")),
                     "all_day": all_day,
                     "calendar": cal_label,
                 })
@@ -171,6 +171,72 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
 
     all_events.sort(key=lambda e: (not e["all_day"], e["start"]))
     return _dedup_events(all_events)
+
+
+import re
+
+
+def _clean_ics_summary(summary: str) -> str:
+    """Clean verbose ICS event summaries into human-readable form.
+
+    Examples:
+        "Practice: 2013G Navy (LaMO ARENA)" → "Practice"
+        "Practice: U11 Girls(2034)-26SP (Lafayette...)" → "Practice"
+        "2013G Navy at HYSL" → "Game vs HYSL"
+        "CP25-2015GS vs CFC 2015 G White" → "Game vs CFC"
+    """
+    s = summary.strip()
+
+    # "Practice: TEAM (LOCATION)" → "Practice"
+    if s.lower().startswith("practice:"):
+        return "Practice"
+
+    # "TEAM at OPPONENT" → "Game @ OPPONENT"
+    at_match = re.match(
+        r"(?:[\w\s\-]+?\d{4}\w*\s+)at\s+(.+)", s, re.IGNORECASE
+    )
+    if at_match:
+        opponent = at_match.group(1).strip()
+        # Shorten opponent — take first word/acronym
+        opponent_short = opponent.split()[0] if opponent else opponent
+        return f"Game @ {opponent_short}"
+
+    # "CODE vs OPPONENT" → "Game vs OPPONENT"
+    vs_match = re.match(r".+?\s+vs\.?\s+(.+)", s, re.IGNORECASE)
+    if vs_match:
+        opponent = vs_match.group(1).strip()
+        # Drop team year codes from opponent
+        opponent = re.sub(r"\b\d{4}\s*[GBgb]?\s*", "", opponent).strip()
+        return f"Game vs {opponent}"
+
+    # "[Placeholder]" events
+    if "[placeholder]" in s.lower():
+        # "Tournament [Placeholder] (TEAM)" → "Tournament"
+        return re.sub(r"\s*\[.*?\]\s*\(.*?\)", "", s).strip()
+
+    return s
+
+
+def _clean_location(location: str) -> str:
+    """Shorten location to just the venue name, dropping street address.
+
+    Examples:
+        "LaMO ARENA, 452 Center ST, #A, Moraga" → "LaMO Arena"
+        "Wilder Field #2, 101 Wilder Rd, Orinda, CA 94563" → "Wilder Field #2"
+        "Lafayette Community Center Futsal Rink, 500 St. Mary's..." → "Lafayette CC Futsal"
+    """
+    if not location:
+        return ""
+    # Take everything before the first street number pattern
+    # e.g., "Venue Name, 123 Street..." → "Venue Name"
+    venue = re.split(r",\s*\d+\s", location)[0].strip().rstrip(",")
+
+    # Shorten common long names
+    venue = venue.replace("Lafayette Community Center", "Lafayette CC")
+    venue = venue.replace("Wilder Sports Complex - ", "Wilder ")
+    venue = venue.replace("Sports Complex", "")
+
+    return venue
 
 
 def _fetch_ics_events(
@@ -231,6 +297,10 @@ def _fetch_ics_events(
                         continue
 
                 location = str(component.get("LOCATION", ""))
+
+                # Clean up verbose ICS summaries and locations
+                summary = _clean_ics_summary(summary)
+                location = _clean_location(location)
 
                 events.append({
                     "start": start_dt,
