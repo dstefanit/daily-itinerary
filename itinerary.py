@@ -187,9 +187,9 @@ def _clean_ics_summary(summary: str) -> str:
     """
     s = summary.strip()
 
-    # "Practice: TEAM (LOCATION)" → "Practice"
+    # "Practice: TEAM (LOCATION)" → "Soccer Practice"
     if s.lower().startswith("practice:"):
-        return "Practice"
+        return "Soccer Practice"
 
     # "TEAM at OPPONENT" → "Game @ OPPONENT"
     at_match = re.match(
@@ -199,7 +199,7 @@ def _clean_ics_summary(summary: str) -> str:
         opponent = at_match.group(1).strip()
         # Shorten opponent — take first word/acronym
         opponent_short = opponent.split()[0] if opponent else opponent
-        return f"Game @ {opponent_short}"
+        return f"Soccer @ {opponent_short}"
 
     # "CODE vs OPPONENT" → "Game vs OPPONENT"
     vs_match = re.match(r".+?\s+vs\.?\s+(.+)", s, re.IGNORECASE)
@@ -207,7 +207,7 @@ def _clean_ics_summary(summary: str) -> str:
         opponent = vs_match.group(1).strip()
         # Drop team year codes from opponent
         opponent = re.sub(r"\b\d{4}\s*[GBgb]?\s*", "", opponent).strip()
-        return f"Game vs {opponent}"
+        return f"Soccer vs {opponent}"
 
     # "[Placeholder]" events
     if "[placeholder]" in s.lower():
@@ -751,9 +751,9 @@ notifications that don't need action
 - Each action item should be one concise sentence with due date/amount when available
 
 Return a JSON object with three arrays:
-- "due_now": items due within 3 days or overdue (max 3)
-- "this_week": items due within 7 days (max 3)
-- "on_radar": items 7-14 days out, just for awareness (max 2)
+- "due_now": items due within 3 days or overdue (max 5)
+- "this_week": items due within 7 days (max 5)
+- "on_radar": items 7-14 days out, just for awareness (max 3)
 
 If no items in a tier, use an empty array. If nothing at all, return \
 {{"due_now": [], "this_week": [], "on_radar": []}}
@@ -775,9 +775,9 @@ Example: {{"due_now": ["Chase credit card — $3,532 due tomorrow 04/14"], \
         result = json.loads(response_text)
         # Normalize — ensure all keys exist
         tiered = {
-            "due_now": result.get("due_now", [])[:3],
-            "this_week": result.get("this_week", [])[:3],
-            "on_radar": result.get("on_radar", [])[:2],
+            "due_now": result.get("due_now", [])[:5],
+            "this_week": result.get("this_week", [])[:5],
+            "on_radar": result.get("on_radar", [])[:3],
         }
         total = sum(len(v) for v in tiered.values())
         logger.info(
