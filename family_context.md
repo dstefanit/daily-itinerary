@@ -15,7 +15,7 @@ Extra context to help the AI interpret calendar events accurately.
   - Anna's team: "Myrtle" (6th grade, practice Thu 7pm at Joaquin Moraga Intermediate)
   - Sophia's team: "Manhattan" (4th grade, practice Wed 6pm at Camino Pablo, games Sat 2:30pm)
 - "LAMO" → Anna's soccer team (LAMO Soccer / Lamorinda Soccer Club). Team: 2013G Navy. ICS feed pulls schedule directly. Practice at Wilder Fields (Orinda) and LaMO Arena (452 Center St, Moraga). Coach Luis is the LAMO coach — any event mentioning "Luis" is Anna's soccer.
-- "Eclipse" → Sophia's soccer team (East Bay Eclipse Soccer Club). Team: 2015 Girls Solar. ICS feed pulls schedule directly. Practice at Wilder Sports Complex (Orinda). 2026-27 tryout registration is open.
+- "Eclipse" → Sophia's soccer team (East Bay Eclipse Soccer Club). Team: 2015 Girls Solar. ICS feed pulls schedule directly. Practice locations vary — always use the location from the ICS calendar entry, not a default. 2026-27 tryout registration is open.
 - "Tech rehearsal" or "Alice in Wonderland" → School play/performance rehearsal. Recent: Town Hall Theatre Company's Alice in Wonderland production.
 
 ## Medical / Dental

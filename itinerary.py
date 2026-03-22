@@ -917,14 +917,16 @@ Here are today's calendar events (index: time — title):
 
 For EACH event, provide three things:
 
-1. **location**: If the event is MISSING a location (shown as "at" in the list \
-above), use the family context to fill it in. Use a short venue name + city, \
+1. **location**: ONLY if the event has NO location (no "at ..." shown above). \
+Use the family context to fill it in with a short venue name + city, \
 e.g., "Springbrook Pool, Lafayette" or "Luna Gymnastics, Moraga". \
-If the event already has a location, return null. If you genuinely don't know \
-the location, return null.
+CRITICAL: If the event already has a location from the calendar, return null — \
+the calendar location is authoritative and must NOT be overridden or \
+contradicted by family context. Practice locations vary by week.
 
 2. **note**: A short practical tip (max 12 words) — what to bring, contact info, \
-pickup details. Do NOT repeat the location in the note. Examples:
+pickup details. NEVER mention a location in the note if the event already \
+has one from the calendar. Do NOT contradict the calendar location. Examples:
 - "Bring suit, goggles, cap."
 - "(925) 944-5151. Dr. Milcovich."
 - "Coach Wayne. Super Stars class."
