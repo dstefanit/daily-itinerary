@@ -9,13 +9,13 @@ Extra context to help the AI interpret calendar events accurately.
 - **Sophia** — 10 year old daughter. 5th grade.
 
 ## Recurring Events
-<!-- Add entries here as patterns emerge. Format: -->
-<!-- - "Event Name" → who it's for, what it is -->
+- "Springbrook" or "swim" → Sophia's swim team (Springbrook Swim Team). Practice times: 10&up group is 5:35 PM - 6:20 PM. Bring competitive suit, goggles, swim cap.
+- "Luna" or "gymnastics" → Sophia's gymnastics at Luna Gymnastics in Moraga. Super Stars class, Wednesdays at 2:30 PM with Coach Wayne.
+- "Tech rehearsal" → likely a school play/performance rehearsal for whichever child's name is attached.
 
 ## Locations
-<!-- Add common locations for context. Format: -->
-<!-- - "Stanley Middle School" → Anna's school -->
-<!-- - "Burton Valley" → Sophia's school -->
+- Luna Gymnastics — 594 Moraga Rd, Moraga, CA
+- Springbrook Pool — Lafayette
 
 ## Notes
-<!-- Any other context that helps interpret events -->
+- Swim practice happens rain or shine unless heavy storm/lightning.
