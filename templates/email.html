@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ date_header }}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f4f4f7; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;">
+<tr>
+<td align="center" style="padding:24px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+
+<!-- Header -->
+<tr>
+<td style="background:linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); padding:28px 32px; text-align:center;">
+  <p style="margin:0 0 4px; font-size:13px; letter-spacing:2px; text-transform:uppercase; color:rgba(255,255,255,0.6);">{{ date_header }}</p>
+  <h1 style="margin:0; font-size:26px; font-weight:600; color:#ffffff;">Your Day</h1>
+</td>
+</tr>
+
+{% if weather %}
+<!-- Weather Card -->
+<tr>
+<td style="padding:24px 32px 8px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8f9fb; border-radius:10px; padding:20px;">
+  <tr>
+  <td style="padding:20px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="vertical-align:middle;">
+        <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@2x.png" width="56" height="56" alt="{{ weather.description }}" style="display:block;">
+      </td>
+      <td style="vertical-align:middle; padding-left:12px;">
+        <p style="margin:0; font-size:32px; font-weight:600; color:#1a1a2e;">{{ weather.temp }}°</p>
+        <p style="margin:2px 0 0; font-size:14px; color:#6b7280;">{{ weather.description }}</p>
+      </td>
+      <td style="vertical-align:middle; text-align:right;">
+        <p style="margin:0; font-size:14px; color:#1a1a2e;">
+          <span style="color:#ef4444;">{{ weather.high }}°</span>
+          <span style="color:#9ca3af;">/</span>
+          <span style="color:#3b82f6;">{{ weather.low }}°</span>
+        </p>
+        <p style="margin:4px 0 0; font-size:12px; color:#9ca3af;">{{ location }}</p>
+      </td>
+    </tr>
+    </table>
+  </td>
+  </tr>
+  </table>
+</td>
+</tr>
+{% endif %}
+
+<!-- Events Section -->
+<tr>
+<td style="padding:20px 32px 8px;">
+  <p style="margin:0; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#9ca3af; font-weight:600;">Schedule</p>
+</td>
+</tr>
+
+{% if events %}
+<tr>
+<td style="padding:0 32px 24px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  {% for event in events %}
+  <tr>
+    <td style="padding:12px 0; {% if not loop.last %}border-bottom:1px solid #f0f0f3;{% endif %}">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="80" style="vertical-align:top;">
+          <p style="margin:0; font-size:13px; font-weight:600; color:{% if event.all_day %}#8b5cf6{% else %}#1a1a2e{% endif %};">
+            {{ format_time(event) }}
+          </p>
+        </td>
+        <td style="vertical-align:top; padding-left:12px;">
+          <p style="margin:0; font-size:15px; font-weight:500; color:#1a1a2e;">{{ event.summary }}</p>
+          {% if event.location %}
+          <p style="margin:3px 0 0; font-size:13px; color:#6b7280;">📍 {{ event.location }}</p>
+          {% endif %}
+        </td>
+      </tr>
+      </table>
+    </td>
+  </tr>
+  {% endfor %}
+  </table>
+</td>
+</tr>
+{% else %}
+<tr>
+<td style="padding:12px 32px 28px;">
+  <p style="margin:0; font-size:15px; color:#6b7280; text-align:center; padding:20px 0;">Nothing on the calendar today — enjoy the open day.</p>
+</td>
+</tr>
+{% endif %}
+
+<!-- Footer -->
+<tr>
+<td style="padding:16px 32px; background-color:#f8f9fb; text-align:center; border-top:1px solid #f0f0f3;">
+  <p style="margin:0; font-size:11px; color:#9ca3af;">Sent with ☀️ from Lafayette · {{ year }}</p>
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>
