@@ -27,6 +27,7 @@ Extra context to help the AI interpret calendar events accurately.
 - **Stanley Middle School** — Anna's school. Contact: Brian Mangold.
 
 ## Locations
+- **Home** — 1019 Walnut Drive, Lafayette, CA
 - Lafayette Elementary School — Lafayette, CA
 - Stanley Middle School — Orinda, CA
 - Luna Gymnastics — 594 Moraga Rd, Moraga, CA

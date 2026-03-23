@@ -1102,6 +1102,114 @@ def format_week_event_day(event: dict) -> str:
     return dt.strftime("%a %-m/%-d")
 
 
+HOME_ADDRESS = "1019 Walnut Drive, Lafayette, CA"
+
+
+def _suggest_dinner_time(events: list[dict]) -> dict | None:
+    """Suggest a dinner time based on when the last family event ends.
+
+    Uses AI to estimate drive time from the last event's location
+    back to home (1019 Walnut Dr, Lafayette). Rounds up to nearest
+    15 minutes. Defaults to 6:00 PM if no evening activities.
+
+    Returns:
+        Dict with 'time' (str like "6:30 PM"), 'reason' (str),
+        or None if no events at all.
+    """
+    if not events:
+        return {"time": "6:00 PM", "reason": "Open evening — no activities"}
+
+    # Find the latest non-all-day event end time
+    latest_end = None
+    latest_event = None
+    for e in events:
+        if e.get("all_day"):
+            continue
+        end = e["end"]
+        if hasattr(end, "astimezone"):
+            end = end.astimezone(TIMEZONE)
+        if latest_end is None or end > latest_end:
+            latest_end = end
+            latest_event = e
+
+    if latest_end is None:
+        return {"time": "6:00 PM", "reason": "No timed events today"}
+
+    # Estimate drive time from last event location to home
+    drive_minutes = _estimate_drive_time(latest_event)
+
+    dinner_dt = latest_end + timedelta(minutes=drive_minutes)
+
+    # Round up to nearest 15 minutes
+    minute = dinner_dt.minute
+    remainder = minute % 15
+    if remainder > 0:
+        dinner_dt += timedelta(minutes=15 - remainder)
+    dinner_dt = dinner_dt.replace(second=0, microsecond=0)
+
+    # Clamp: no earlier than 5:30 PM, no later than 8:30 PM
+    early = dinner_dt.replace(hour=17, minute=30)
+    late = dinner_dt.replace(hour=20, minute=30)
+    if dinner_dt < early:
+        dinner_dt = early
+        reason = "Everyone home early"
+    elif dinner_dt > late:
+        dinner_dt = late
+        end_str = latest_end.strftime("%-I:%M %p")
+        reason = f"Late night — last event ends {end_str}"
+    else:
+        who = latest_event.get("person", "").capitalize() or "Last event"
+        end_str = latest_end.strftime("%-I:%M %p")
+        loc = latest_event.get("location", "")
+        if drive_minutes > 15:
+            reason = f"{who} done at {end_str} + ~{drive_minutes} min drive"
+        else:
+            reason = f"{who} done at {end_str}"
+
+    return {
+        "time": dinner_dt.strftime("%-I:%M %p"),
+        "reason": reason,
+    }
+
+
+# Known drive times (minutes) from common locations to home in Lafayette
+_DRIVE_TIMES = {
+    "lamo arena": 10,
+    "moraga": 10,
+    "luna gymnastics": 10,
+    "wilder": 8,
+    "stanley": 8,
+    "orinda": 10,
+    "lafayette": 5,
+    "springbrook": 5,
+    "camino pablo": 5,
+    "lafayette elementary": 5,
+    "lafayette cc": 5,
+    "walnut creek": 12,
+    "milcovich": 12,
+    "concord": 20,
+    "pleasant hill": 15,
+}
+
+
+def _estimate_drive_time(event: dict) -> int:
+    """Estimate drive time in minutes from an event location to home.
+
+    Uses a lookup table of known local venues. Falls back to 15 min
+    for unknown locations.
+    """
+    location = (event.get("location") or "").lower()
+    summary = (event.get("summary") or "").lower()
+    search = f"{location} {summary}"
+
+    for keyword, minutes in _DRIVE_TIMES.items():
+        if keyword in search:
+            return minutes
+
+    # Default: 15 minutes for unknown locations in the Lamorinda area
+    return 15
+
+
 def render_email(
     events: list[dict],
     week_ahead: list[dict],
@@ -1166,6 +1274,7 @@ def render_email(
         action_items_this_week=this_week,
         action_items_on_radar=on_radar,
         has_action_items=bool(due_now or this_week or on_radar),
+        dinner=_suggest_dinner_time(events),
         travel=travel,
         location=LOCATION,
         format_time=format_event_time,
