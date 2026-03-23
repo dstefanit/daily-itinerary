@@ -4,6 +4,8 @@ uses AI to summarize the day with practical nudges, sends a formatted
 morning email with week-ahead preview and upcoming birthdays.
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging
@@ -236,6 +238,13 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                 if all_day:
                     start_dt = datetime.strptime(start["date"], "%Y-%m-%d")
                     end_dt = datetime.strptime(end["date"], "%Y-%m-%d")
+                    # Clamp start to query range for multi-day events
+                    # so "Spring Break 3/9-3/22" shows as today, not 3/9
+                    if start_dt < time_min.replace(tzinfo=None):
+                        start_dt = time_min.replace(
+                            hour=0, minute=0, second=0,
+                            microsecond=0, tzinfo=None,
+                        )
                 else:
                     start_dt = datetime.fromisoformat(start["dateTime"])
                     end_dt = datetime.fromisoformat(end["dateTime"])
@@ -244,6 +253,7 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                     "start": start_dt,
                     "end": end_dt,
                     "summary": summary,
+                    "description": event.get("description", ""),
                     "location": _clean_location(event.get("location", "")),
                     "all_day": all_day,
                     "calendar": cal_label,
@@ -383,8 +393,11 @@ def _fetch_ics_events(
                     # Compare as dates
                     if start_dt >= time_max.date() or end_dt <= time_min.date():
                         continue
+                    # Clamp start to query range for multi-day events
+                    # so "Spring Break 3/9-3/22" shows as today, not 3/9
+                    effective_start = max(start_dt, time_min.date())
                     start_dt = datetime.combine(
-                        start_dt, datetime.min.time()
+                        effective_start, datetime.min.time()
                     )
                     end_dt = datetime.combine(end_dt, datetime.min.time())
                 else:
@@ -397,6 +410,7 @@ def _fetch_ics_events(
                         continue
 
                 location = str(component.get("LOCATION", ""))
+                description = str(component.get("DESCRIPTION", ""))
 
                 # Detect person from ORIGINAL summary before cleaning
                 person = _detect_person(label, summary)
@@ -409,6 +423,7 @@ def _fetch_ics_events(
                     "start": start_dt,
                     "end": end_dt,
                     "summary": summary,
+                    "description": description,
                     "location": location,
                     "all_day": all_day,
                     "calendar": label,
@@ -896,7 +911,118 @@ Example: {{"due_now": ["Chase credit card — $3,532 due tomorrow 04/14"], \
         return {}
 
 
-def enrich_events(events: list[dict]) -> None:
+def get_carpool_updates() -> str:
+    """Scan Gmail for replies to itinerary emails containing carpool info.
+
+    Looks for recent replies (last 24h) to "Family Itinerary" emails
+    from Amy or Dennis. Returns raw text for the AI enrichment prompt.
+
+    Returns:
+        Carpool context string, or "" if none found.
+    """
+    refresh_token = os.environ.get("GMAIL_REFRESH_TOKEN")
+    gmail_client_id = os.environ.get("GMAIL_CLIENT_ID")
+    gmail_client_secret = os.environ.get("GMAIL_CLIENT_SECRET")
+
+    if not all([refresh_token, gmail_client_id, gmail_client_secret]):
+        return ""
+
+    try:
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            client_id=gmail_client_id,
+            client_secret=gmail_client_secret,
+            token_uri="https://oauth2.googleapis.com/token",
+        )
+        gmail = build("gmail", "v1", credentials=creds)
+
+        # Search for replies to itinerary emails in the last 24 hours
+        now = datetime.now(TIMEZONE)
+        after_date = (now - timedelta(hours=24)).strftime("%Y/%m/%d")
+        query = (
+            f"after:{after_date} subject:\"Family Itinerary\" "
+            f"(from:amylynnfischer@gmail.com OR "
+            f"from:dennis.stefanitsis@gmail.com) "
+            f"-from:{SENDER}"
+        )
+
+        results = gmail.users().messages().list(
+            userId="me", q=query, maxResults=10
+        ).execute()
+        messages = results.get("messages", [])
+
+        if not messages:
+            return ""
+
+        # Fetch body text of each reply
+        reply_texts = []
+        for msg in messages:
+            msg_data = gmail.users().messages().get(
+                userId="me", id=msg["id"], format="full",
+            ).execute()
+
+            # Extract plain text body
+            body = _extract_email_body(msg_data)
+            if body:
+                headers = {
+                    h["name"]: h["value"]
+                    for h in msg_data.get("payload", {}).get("headers", [])
+                }
+                sender = headers.get("From", "Unknown")
+                reply_texts.append(f"From: {sender}\n{body[:500]}")
+
+        if not reply_texts:
+            return ""
+
+        carpool_text = "\n---\n".join(reply_texts)
+        logger.info(
+            f"Found {len(reply_texts)} itinerary reply(s) with "
+            f"potential carpool info"
+        )
+        return carpool_text
+
+    except Exception as e:
+        logger.warning(f"Carpool reply scan failed: {e}")
+        return ""
+
+
+def _extract_email_body(msg_data: dict) -> str:
+    """Extract plain text body from a Gmail message payload.
+
+    Handles both simple messages and multipart MIME structures.
+    """
+    import base64
+
+    payload = msg_data.get("payload", {})
+
+    # Simple message with body directly
+    if payload.get("body", {}).get("data"):
+        return base64.urlsafe_b64decode(
+            payload["body"]["data"]
+        ).decode("utf-8", errors="replace")
+
+    # Multipart — look for text/plain
+    for part in payload.get("parts", []):
+        if part.get("mimeType") == "text/plain":
+            data = part.get("body", {}).get("data", "")
+            if data:
+                return base64.urlsafe_b64decode(data).decode(
+                    "utf-8", errors="replace"
+                )
+        # Nested multipart
+        for sub in part.get("parts", []):
+            if sub.get("mimeType") == "text/plain":
+                data = sub.get("body", {}).get("data", "")
+                if data:
+                    return base64.urlsafe_b64decode(data).decode(
+                        "utf-8", errors="replace"
+                    )
+
+    return ""
+
+
+def enrich_events(events: list[dict], carpool_context: str = "") -> None:
     """Add practical context notes to sparse calendar events.
 
     Uses Claude to match each event against family_context.md and add
@@ -924,9 +1050,21 @@ def enrich_events(events: list[dict]) -> None:
                 start = start.astimezone(TIMEZONE)
             time_str = start.strftime("%-I:%M %p")
         loc = f" at {e['location']}" if e.get("location") else ""
-        event_lines.append(f"{i}: {time_str} — {e['summary']}{loc}")
+        desc = e.get("description", "").strip()
+        desc_snippet = f" [{desc[:120]}]" if desc else ""
+        event_lines.append(f"{i}: {time_str} — {e['summary']}{loc}{desc_snippet}")
 
     events_text = "\n".join(event_lines)
+
+    # Build carpool section if replies were found
+    carpool_section = ""
+    if carpool_context:
+        carpool_section = (
+            "\n\nCARPOOL REPLIES — family members replied to a previous "
+            "itinerary email with logistics updates. Match these to the "
+            "correct events above:\n"
+            f"{carpool_context}\n"
+        )
 
     prompt = f"""You are enriching calendar events for a family daily itinerary email.
 
@@ -935,9 +1073,9 @@ locations, doctors, sports teams, etc.:
 
 {FAMILY_CONTEXT}
 
-Here are today's calendar events (index: time — title):
+Here are today's calendar events (index: time — title [description if any]):
 {events_text}
-
+{carpool_section}
 For EACH event, provide three things:
 
 1. **location**: ONLY if the event has NO location (no "at ..." shown above). \
@@ -947,9 +1085,15 @@ CRITICAL: If the event already has a location from the calendar, return null —
 the calendar location is authoritative and must NOT be overridden or \
 contradicted by family context. Practice locations vary by week.
 
-2. **note**: A short practical tip (max 12 words) — what to bring, contact info, \
-pickup details. NEVER mention a location in the note if the event already \
-has one from the calendar. Do NOT contradict the calendar location. Examples:
+2. **note**: A short practical tip (max 15 words) — what to bring, contact info, \
+pickup details, carpool info. NEVER mention a location in the note if the event \
+already has one from the calendar. Do NOT contradict the calendar location.
+CARPOOL PRIORITY: If the event description contains carpool info (who is driving, \
+pickup time/location), ALWAYS surface it in the note — this is the most important \
+detail for parents. Format: "Carpool: [Parent] driving" or "Carpool: [Parent] \
+picks up at [time]". Examples:
+- "Carpool: Sarah's mom driving. Bring suit, goggles."
+- "Carpool: Amy drops off, Johnson family picks up."
 - "Bring suit, goggles, cap."
 - "(925) 944-5151. Dr. Milcovich."
 - "Coach Wayne. Super Stars class."
@@ -1242,6 +1386,7 @@ def render_email(
     action_items: dict[str, list[str]],
     travel: list[dict],
     evening_mode: bool = False,
+    midday_mode: bool = False,
 ) -> str:
     """Render the HTML email using Jinja2 template.
 
@@ -1254,6 +1399,8 @@ def render_email(
         action_items: Tiered action items dict with keys
             'due_now', 'this_week', 'on_radar'
         travel: Upcoming trips
+        evening_mode: True for tomorrow preview
+        midday_mode: True for afternoon update
 
     Returns:
         Rendered HTML string
@@ -1268,13 +1415,18 @@ def render_email(
     this_week = action_items.get("this_week", []) if action_items else []
     on_radar = action_items.get("on_radar", []) if action_items else []
 
-    # Evening mode shows tomorrow's date and different headers
+    # Mode-specific headers
     if evening_mode:
         tomorrow = today + timedelta(days=1)
         date_header = f"Tomorrow — {tomorrow.strftime('%A, %B %-d')}"
         title = "Evening Preview"
         schedule_label = "Tomorrow's Schedule"
         briefing_label = "Prep for Tomorrow"
+    elif midday_mode:
+        date_header = today.strftime("%A, %B %-d")
+        title = "Midday Update"
+        schedule_label = "This Afternoon"
+        briefing_label = "Afternoon Check-In"
     else:
         date_header = today.strftime("%A, %B %-d")
         title = "Stefanitsis Family Itinerary"
@@ -1339,6 +1491,10 @@ def send_email(
             subject=subject,
             html_content=HtmlContent(html),
         )
+        # Reply-To Dennis's personal Gmail so Amy can reply with
+        # carpool updates that get picked up by the next run
+        message.reply_to = Email("dennis.stefanitsis@gmail.com",
+                                 "Family Itinerary")
         try:
             response = sg.send(message)
             logger.info(
@@ -1415,11 +1571,88 @@ No greetings, sign-offs, emojis, or bullet points. Flowing sentences."""
         return ""
 
 
+def _get_rest_of_day_events(service) -> list[dict]:
+    """Fetch events from now through end of today."""
+    now = datetime.now(TIMEZONE)
+    end_of_day = now.replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
+    return _fetch_events(service, now, end_of_day)
+
+
+def generate_midday_summary(
+    events: list[dict], weather: dict, carpool_context: str
+) -> str:
+    """Generate a midday update summary focused on the afternoon ahead.
+
+    Args:
+        events: Remaining events for today
+        weather: Current weather data
+        carpool_context: Any carpool replies received since morning
+
+    Returns:
+        AI-generated midday summary (plain text, 2-4 sentences)
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return ""
+
+    today = datetime.now(TIMEZONE)
+    events_text = _format_events_for_prompt(events)
+
+    weather_text = ""
+    if weather:
+        weather_text = (
+            f"Current weather: {weather['description']}, "
+            f"{weather['temp']}°F. "
+            f"Rest of day: high {weather['high']}°, low {weather['low']}°. "
+            f"Rain chance: {weather['rain_chance']}%."
+        )
+
+    carpool_note = ""
+    if carpool_context:
+        carpool_note = (
+            "\n\nCarpool updates received since the morning email:\n"
+            f"{carpool_context}\n"
+            "Incorporate any carpool changes into your summary."
+        )
+
+    prompt = f"""{FAMILY_CONTEXT}
+
+It is {today.strftime('%A, %B %-d, %Y')} at {today.strftime('%-I:%M %p')}.
+{weather_text}
+
+Remaining events today:
+{events_text}
+{carpool_note}
+
+Write 2-4 sentences as a midday check-in for the family. Focus on:
+- What's coming up this afternoon/evening
+- Any carpool changes or logistics updates that came in
+- Weather changes from this morning (rain moving in, temp swings)
+- Tight transitions between after-school events
+
+Tone: warm, casual, like a quick text to the family. No greetings, \
+sign-offs, emojis, or bullet points. Flowing sentences."""
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=250,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception as e:
+        logger.error(f"Midday summary failed: {e}")
+        return ""
+
+
 def main(mode: str = "morning") -> None:
     """Pull calendar + weather, generate AI summary, render and send.
 
     Args:
-        mode: 'morning' for day-of briefing, 'evening' for tomorrow preview.
+        mode: 'morning', 'midday', or 'evening' briefing.
     """
     try:
         from dotenv import load_dotenv
@@ -1430,6 +1663,12 @@ def main(mode: str = "morning") -> None:
     logger.info(f"Running {mode} briefing...")
     service = _build_calendar_service()
 
+    # Scan for carpool replies from Amy/Dennis to previous itineraries
+    logger.info("Checking for carpool replies...")
+    carpool_context = get_carpool_updates()
+    if carpool_context:
+        logger.info("Found carpool updates from email replies")
+
     if mode == "evening":
         # Evening briefing — focused on tomorrow
         logger.info("Fetching tomorrow's events...")
@@ -1437,7 +1676,7 @@ def main(mode: str = "morning") -> None:
         logger.info(f"Found {len(tomorrow_events)} event(s) tomorrow")
 
         logger.info("Enriching events with family context...")
-        enrich_events(tomorrow_events)
+        enrich_events(tomorrow_events, carpool_context=carpool_context)
 
         logger.info("Fetching weather...")
         weather = get_weather()
@@ -1461,6 +1700,36 @@ def main(mode: str = "morning") -> None:
         )
         send_email(dennis_html, family_html, subject_override=subject)
 
+    elif mode == "midday":
+        # Midday update — rest of today + carpool changes
+        logger.info("Fetching remaining events today...")
+        events = _get_rest_of_day_events(service) if service else []
+        logger.info(f"Found {len(events)} event(s) remaining today")
+
+        logger.info("Enriching events with family context...")
+        enrich_events(events, carpool_context=carpool_context)
+
+        logger.info("Fetching weather...")
+        weather = get_weather()
+
+        logger.info("Generating midday summary...")
+        summary = generate_midday_summary(events, weather, carpool_context)
+
+        today = datetime.now(TIMEZONE)
+        dennis_html = render_email(
+            events, week_ahead=[], weather=weather,
+            summary=summary, special_dates=[],
+            action_items={}, travel=[],
+            evening_mode=False,
+            midday_mode=True,
+        )
+        family_html = dennis_html  # Same version for both
+
+        subject = (
+            f"Midday Update — {today.strftime('%A, %B %-d')}"
+        )
+        send_email(dennis_html, family_html, subject_override=subject)
+
     else:
         # Morning briefing — existing behavior
         logger.info("Fetching today's events...")
@@ -1472,8 +1741,8 @@ def main(mode: str = "morning") -> None:
         logger.info(f"Found {len(week_ahead)} event(s) rest of week")
 
         logger.info("Enriching events with family context...")
-        enrich_events(events)
-        enrich_events(week_ahead)
+        enrich_events(events, carpool_context=carpool_context)
+        enrich_events(week_ahead, carpool_context=carpool_context)
 
         logger.info("Checking upcoming birthdays/anniversaries...")
         special_dates = get_upcoming_special_dates()

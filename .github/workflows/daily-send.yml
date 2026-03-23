@@ -4,6 +4,8 @@ on:
   schedule:
     # Morning briefing: 6:00 AM PT = 1:00 PM UTC (during PDT)
     - cron: "0 13 * * *"
+    # Midday update: 1:00 PM PT = 8:00 PM UTC (during PDT)
+    - cron: "0 20 * * *"
     # Evening briefing: 5:00 PM PT = midnight UTC (during PDT)
     - cron: "0 0 * * *"
   workflow_dispatch:
@@ -15,6 +17,7 @@ on:
         type: choice
         options:
           - morning
+          - midday
           - evening
 
 jobs:
@@ -41,6 +44,8 @@ jobs:
             echo "mode=$INPUT_MODE" >> "$GITHUB_OUTPUT"
           elif [ "$CRON_SCHEDULE" = "0 0 * * *" ]; then
             echo "mode=evening" >> "$GITHUB_OUTPUT"
+          elif [ "$CRON_SCHEDULE" = "0 20 * * *" ]; then
+            echo "mode=midday" >> "$GITHUB_OUTPUT"
           else
             echo "mode=morning" >> "$GITHUB_OUTPUT"
           fi
