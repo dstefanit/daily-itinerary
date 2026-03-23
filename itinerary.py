@@ -263,13 +263,17 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
     # Merge in ICS feed events
     all_events.extend(_fetch_ics_events(time_min, time_max))
 
-    # Sort by date first, then all-day before timed, then by time.
-    # Using isoformat() for the third key avoids naive vs aware comparison.
-    all_events.sort(key=lambda e: (
-        e["start"].date(),
-        0 if e["all_day"] else 1,
-        e["start"].isoformat(),
-    ))
+    # Sort by date then time, all in Pacific.
+    # All-day events use their naive date; timed events convert to Pacific.
+    def _sort_key(e):
+        dt = e["start"]
+        if e["all_day"]:
+            return (dt.date(), 0, 0)
+        if hasattr(dt, "astimezone") and dt.tzinfo:
+            dt = dt.astimezone(TIMEZONE)
+        return (dt.date(), 1, dt.hour * 60 + dt.minute)
+
+    all_events.sort(key=_sort_key)
     return _dedup_events(all_events)
 
 
@@ -1270,15 +1274,19 @@ def format_event_time(event: dict) -> str:
     if event["all_day"]:
         return "All Day"
     start = event["start"]
-    if hasattr(start, "astimezone"):
+    if hasattr(start, "astimezone") and start.tzinfo:
         start = start.astimezone(TIMEZONE)
     return start.strftime("%-I:%M %p")
 
 
 def format_week_event_day(event: dict) -> str:
-    """Format an event's day and date for the week-ahead section."""
+    """Format an event's day and date for the week-ahead section.
+
+    All-day events skip timezone conversion — they're date-based,
+    and converting naive midnight UTC to Pacific shifts the day back.
+    """
     dt = event["start"]
-    if hasattr(dt, "astimezone"):
+    if not event.get("all_day") and hasattr(dt, "astimezone") and dt.tzinfo:
         dt = dt.astimezone(TIMEZONE)
     return dt.strftime("%a %-m/%-d")
 
