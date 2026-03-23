@@ -55,6 +55,11 @@ ICS_FEEDS = {
         "&startDate=1769932800000&endDate=1803888000000"
         "&roster_group_id=130962"
     ): "Sophia Swim",
+    (
+        "https://www.gomotionapp.com/rest/ics/system/5/Events.ics"
+        "?key=TvJ8yGo6%2FRO5FqvDtM2nEQ%3D%3D&enabled=false"
+        "&tz=America%2FLos_Angeles"
+    ): "Sophia Swim",
 }
 
 # Family context for the AI summary — loads from family_context.md if available
@@ -1178,7 +1183,7 @@ _DRIVE_TIMES = {
     "moraga": 10,
     "luna gymnastics": 10,
     "wilder": 8,
-    "stanley": 8,
+    "stanley": 5,
     "orinda": 10,
     "lafayette": 5,
     "springbrook": 5,
