@@ -248,6 +248,9 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
                 else:
                     start_dt = datetime.fromisoformat(start["dateTime"])
                     end_dt = datetime.fromisoformat(end["dateTime"])
+                    # Clamp timed multi-day events to query range
+                    if start_dt < time_min:
+                        start_dt = time_min
 
                 all_events.append({
                     "start": start_dt,
@@ -385,21 +388,27 @@ def _fetch_ics_events(
                 start_dt = dtstart.dt
                 end_dt = dtend.dt if dtend else start_dt
 
-                # Handle date vs datetime
-                all_day = isinstance(start_dt, date) and not isinstance(
+                # Determine all-day: true if EITHER is a pure date
+                start_is_date = isinstance(start_dt, date) and not isinstance(
                     start_dt, datetime
                 )
+                end_is_date = isinstance(end_dt, date) and not isinstance(
+                    end_dt, datetime
+                )
+                all_day = start_is_date or end_is_date
+
                 if all_day:
-                    # Compare as dates
-                    if start_dt >= time_max.date() or end_dt <= time_min.date():
+                    # Normalize both to pure dates for comparison
+                    start_d = start_dt if start_is_date else start_dt.date()
+                    end_d = end_dt if end_is_date else end_dt.date()
+                    if start_d >= time_max.date() or end_d <= time_min.date():
                         continue
                     # Clamp start to query range for multi-day events
-                    # so "Spring Break 3/9-3/22" shows as today, not 3/9
-                    effective_start = max(start_dt, time_min.date())
+                    effective_start = max(start_d, time_min.date())
                     start_dt = datetime.combine(
                         effective_start, datetime.min.time()
                     )
-                    end_dt = datetime.combine(end_dt, datetime.min.time())
+                    end_dt = datetime.combine(end_d, datetime.min.time())
                 else:
                     # Ensure timezone-aware for comparison
                     if start_dt.tzinfo is None:
@@ -408,6 +417,10 @@ def _fetch_ics_events(
                         end_dt = end_dt.replace(tzinfo=TIMEZONE)
                     if start_dt >= time_max or end_dt <= time_min:
                         continue
+                    # Clamp start to query range for multi-day timed
+                    # events (e.g., "Spring Clinics 3/9-3/27")
+                    if start_dt < time_min:
+                        start_dt = time_min
 
                 location = str(component.get("LOCATION", ""))
                 description = str(component.get("DESCRIPTION", ""))
