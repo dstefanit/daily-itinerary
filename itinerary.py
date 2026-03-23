@@ -60,7 +60,19 @@ ICS_FEEDS = {
         "?key=TvJ8yGo6%2FRO5FqvDtM2nEQ%3D%3D&enabled=false"
         "&tz=America%2FLos_Angeles"
     ): "Sophia Swim",
+    (
+        "https://www.lafsd.org/apps/events/ical/"
+        "?id=0&cb=1774233892517"
+    ): "School",
 }
+
+# School calendar events to INCLUDE — no school days, early dismissals,
+# first/last day. Everything else (board meetings, town halls) is skipped.
+_SCHOOL_KEYWORDS = [
+    "no school", "early dismissal", "first day of school",
+    "last day of school", "break", "holiday",
+    "district office closed", "conference",
+]
 
 # Family context for the AI summary — loads from family_context.md if available
 def _load_family_context() -> str:
@@ -348,6 +360,12 @@ def _fetch_ics_events(
                 # Skip cancelled events
                 if summary.upper().startswith("CANCELLED"):
                     continue
+
+                # School calendar: only keep relevant events
+                if label == "School":
+                    summ_lower = summary.lower()
+                    if not any(k in summ_lower for k in _SCHOOL_KEYWORDS):
+                        continue
 
                 dtstart = component.get("DTSTART")
                 dtend = component.get("DTEND")

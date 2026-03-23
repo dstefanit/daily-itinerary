@@ -24,7 +24,8 @@ Extra context to help the AI interpret calendar events accurately.
 
 ## Schools
 - **Lafayette Elementary School** — Sophia's school. Lafayette, CA. Contact: Melissa Barclay (Principal).
-- **Stanley Middle School** — Anna's school. Contact: Brian Mangold.
+- **Stanley Middle School** — Anna's school. Lafayette, CA. Contact: Brian Mangold.
+- **School calendar** — LAFSD ICS feed pulls no-school days, early dismissals, breaks, first/last day. Board meetings and town halls are filtered out.
 
 ## Locations
 - **Home** — 1019 Walnut Drive, Lafayette, CA
