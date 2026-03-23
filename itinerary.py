@@ -58,11 +58,6 @@ ICS_FEEDS = {
         "&roster_group_id=130962"
     ): "Sophia Swim",
     (
-        "https://www.gomotionapp.com/rest/ics/system/5/Events.ics"
-        "?key=TvJ8yGo6%2FRO5FqvDtM2nEQ%3D%3D&enabled=false"
-        "&tz=America%2FLos_Angeles"
-    ): "Sophia Swim",
-    (
         "https://www.lafsd.org/apps/events/ical/"
         "?id=0&cb=1774233892517"
     ): "School",
@@ -268,7 +263,13 @@ def _fetch_events(service, time_min: datetime, time_max: datetime) -> list[dict]
     # Merge in ICS feed events
     all_events.extend(_fetch_ics_events(time_min, time_max))
 
-    all_events.sort(key=lambda e: (not e["all_day"], e["start"]))
+    # Sort by date first, then all-day before timed, then by time.
+    # Using isoformat() for the third key avoids naive vs aware comparison.
+    all_events.sort(key=lambda e: (
+        e["start"].date(),
+        0 if e["all_day"] else 1,
+        e["start"].isoformat(),
+    ))
     return _dedup_events(all_events)
 
 
