@@ -16,7 +16,7 @@ Extra context to help the AI interpret calendar events accurately.
   - Sophia's team: "Manhattan" (4th grade, practice Wed 6pm at Camino Pablo, games Sat 2:30pm)
 - "LAMO" → Anna's soccer team (LAMO Soccer / Lamorinda Soccer Club). Team: 2013G Navy. ICS feed pulls schedule directly. Practice at Wilder Fields (Orinda) and LaMO Arena (452 Center St, Moraga). Coach Luis is the LAMO coach — any event mentioning "Luis" is Anna's soccer.
 - "Eclipse" → Sophia's soccer team (East Bay Eclipse Soccer Club). Team: 2015 Girls Solar. ICS feed pulls schedule directly. Practice locations vary — always use the location from the ICS calendar entry, not a default. 2026-27 tryout registration is open.
-- "Tech rehearsal" or "Alice in Wonderland" → School play/performance rehearsal. Recent: Town Hall Theatre Company's Alice in Wonderland production.
+- "Tech rehearsal" or "Alice in Wonderland" → School play/performance rehearsal. Recent: Town Hall Theatre Company's Alice in Wonderland production. Volunteer sign-ups required (around one hour time commitment).
 
 ## Medical / Dental
 - **Family Dentist** — Milcovich Dental Arts, Dr. William Milcovich, 1855 San Miguel Dr., Suite 27, Walnut Creek, CA 94596. Phone: (925) 944-5151. Website: milcodental.com
@@ -79,25 +79,18 @@ Extra context to help the AI interpret calendar events accurately.
 - **Town Hall Theatre Company** — Alice in Wonderland production. Volunteer sign-ups required.
 - **School fees/forms** — Field trips, yearbook orders, picture day, etc. that require payment or a signed form by a deadline.
 
+## Upcoming Travel
+
+### Las Vegas Trip — March 5-8, 2026
+- **Flights**: United Airlines Confirmation FFM96B. Outbound March 5, return March 8, 2026.
+- **Hotel**: Wynn Las Vegas / Encore reservations confirmed (multiple confirmations on file).
+- **Status**: Flights were rebooked/refunded in late March. Clarify current status.
+
+### Ski Trip — Northstar Village (Date TBD)
+- **Lodging**: Airbnb "Cozy Ski-In Studio | Northstar Village" with Smart Pricing enabled. 
+- **Status**: Actively managing rental listing; guest Mark's group checked out March 8, 2026.
+- **Note**: May be for summer/future season management, not a family trip.
+
 ## Itinerary Preferences
 - **Action items**: Prioritize upcoming bills, payments, auto-withdrawals, and due dates — anything with a penalty for being late (taxes, insurance premiums, utilities, subscriptions, tuition). Include amount and due date when available.
-- **Upcoming travel**: Only include trips involving flights or leaving the Bay Area (e.g., Disneyland, ski trips). Exclude local Bay Area activities.
-- **Skip**: PTA meeting invites — Dennis does not attend PTA meetings.
-- **Skip**: Glacier Point / business emails — business is handled separately. This itinerary is personal/family only.
-- **Flag senders**: Emails from IRS, FTB, Contra Costa County, Placer County, NJCourtNotice (NJ bar), Chase mortgage, PURE Insurance, Fidelity "Action Needed", or any tax/CPA firm should always be flagged as action items.
-- **Skip senders**: Google Ads promo emails, Google Cloud product updates, CVS promotions, Costco Visa FICO score updates, Chase "see how your home compares" marketing.
-- **Done label**: Dennis labels emails "Done" in Gmail when he's handled them. The scanner excludes anything labeled Done. This is how items drop off the daily email.
-- **Tiered action items**: Items are sorted into DUE NOW (red, ≤3 days), THIS WEEK (amber, ≤7 days), and ON RADAR (gray, 7-14 days). Up to 5/5/3 items per tier.
-- **Color coding**: Calendar events are color-coded by family member — Anna=pink, Sophia=yellow, Dennis=blue, Amy=purple. Each entry shows a small name tag pill next to the event title. Person detection uses calendar name + keyword matching (e.g., "swim"→Sophia, "Luis"/"LAMO"→Anna, "Eclipse"→Sophia).
-- **ICS feeds**: Kids' soccer schedules are pulled directly from BYGA webcal feeds (not Google Calendar subscriptions). Events are cleaned to show "Soccer Practice", "Soccer @ Opponent", etc. with venue-only locations.
-- **Auto-skip**: Payment confirmations ("thanks for your payment") are not action items — the bill is already paid.
-- **AI refinement**: The AI should continue learning from patterns in Dennis's email and calendar to improve what it surfaces vs. filters out over time. When a new recurring bill or obligation is detected, note it here for future runs.
-
-## Notes
-- Swim practice happens rain or shine unless heavy storm/lightning.
-- Dennis uses Oura Ring for health tracking (stress, sleep, blood pressure monitoring).
-- Family uses Warby Parker for eyeglasses/contacts.
-- School communications come via **ParentSquare** (Aeries Communications) to Dennis's personal email — both Lafayette Elementary and Stanley Middle School send daily digests. Flag attendance notices (tardy/absent) and anything requiring a form or permission slip.
-- **Stanley Middle School** also sends: progress reports, conference scheduling, minimum days, survey permission forms (e.g., CA Healthy Kids Survey).
-- **Lafayette School District** sends: board meeting notices, budget/parcel tax info. These are FYI — don't flag as action items unless a vote or deadline is involved.
-- **EBMUD** — local water utility. Sends construction/paving notices for the neighborhood. FYI only, not an action item.
+- **Upcoming travel**: Only include trips involving flights or leaving the Bay Area (e.g., Disneyland, ski trips). Exclude local Bay Area
